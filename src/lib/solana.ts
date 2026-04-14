@@ -103,7 +103,11 @@ export async function verifySolPayment(params: {
 }): Promise<{ valid: boolean; error?: string; actualAmount?: number }> {
   const { signature, expectedRecipient, expectedAmountSol, expectedSender } =
     params;
-  const tolerance = params.toleranceSol ?? 0.00001; // 10k lamports
+  // Tolerance is 5% of expected amount (handles normal SOL price movement
+  // between client computation and server verification). Minimum 0.00001
+  // SOL to handle tiny rounding differences.
+  const tolerance =
+    params.toleranceSol ?? Math.max(0.00001, expectedAmountSol * 0.05);
   const connection = getConnection();
 
   try {
@@ -192,8 +196,9 @@ export async function verifyBudjuPayment(params: {
     const postAmt = postRecipient?.uiTokenAmount?.uiAmount || 0;
     const delta = postAmt - preAmt;
 
-    // Allow tiny tolerance for floating-point
-    if (delta < expectedAmountBudju - 0.01) {
+    // 5% tolerance to absorb normal price movement during payment.
+    const budjuTolerance = Math.max(0.01, expectedAmountBudju * 0.05);
+    if (delta < expectedAmountBudju - budjuTolerance) {
       return {
         valid: false,
         error: `Amount mismatch: expected ${expectedAmountBudju} BUDJU, got ${delta}`,
