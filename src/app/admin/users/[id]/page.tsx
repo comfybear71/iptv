@@ -16,6 +16,14 @@ interface UserData {
   balanceBUDJU?: number;
   autoRenew?: boolean;
   disabled?: boolean;
+  walletAddress?: string;
+  walletVerifiedAt?: string;
+}
+
+interface DiscountTier {
+  label: string;
+  minBudju: number;
+  discountPct: number;
 }
 
 interface OrderData {
@@ -56,6 +64,8 @@ export default function AdminUserDetailPage() {
   const [orders, setOrders] = useState<OrderData[]>([]);
   const [subs, setSubs] = useState<SubData[]>([]);
   const [ledger, setLedger] = useState<LedgerData[]>([]);
+  const [liveBudjuBalance, setLiveBudjuBalance] = useState<number | null>(null);
+  const [discountTier, setDiscountTier] = useState<DiscountTier | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Balance form
@@ -73,6 +83,8 @@ export default function AdminUserDetailPage() {
     setOrders(data.orders || []);
     setSubs(data.subscriptions || []);
     setLedger(data.ledger || []);
+    setLiveBudjuBalance(data.liveBudjuBalance ?? null);
+    setDiscountTier(data.discountTier || null);
     setLoading(false);
   };
 
@@ -215,6 +227,54 @@ export default function AdminUserDetailPage() {
                   {user.disabled ? "Re-enable" : "Disable account"}
                 </button>
               </div>
+            </div>
+
+            {/* Linked wallet + live BUDJU */}
+            <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/50 p-6">
+              <h3 className="text-sm font-semibold text-white">
+                Linked Phantom Wallet
+              </h3>
+              {user.walletAddress ? (
+                <div className="mt-2">
+                  <p className="break-all font-mono text-xs text-slate-300">
+                    {user.walletAddress}
+                  </p>
+                  {user.walletVerifiedAt && (
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Verified{" "}
+                      {new Date(user.walletVerifiedAt).toLocaleDateString()}
+                    </p>
+                  )}
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                        BUDJU (on-chain)
+                      </p>
+                      <p className="text-lg font-bold text-white">
+                        {liveBudjuBalance === null
+                          ? "—"
+                          : liveBudjuBalance.toLocaleString()}{" "}
+                        BUDJU
+                      </p>
+                    </div>
+                    {discountTier && (
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                          Discount Tier
+                        </p>
+                        <div className="mt-1 inline-block rounded-full bg-green-900/50 px-3 py-1 text-xs font-medium text-green-400">
+                          {discountTier.label} — {discountTier.discountPct}% off
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-slate-500">
+                  No wallet linked. User will connect on their next subscribe
+                  attempt.
+                </p>
+              )}
             </div>
 
             {/* Balances */}

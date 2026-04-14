@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { ObjectId } from "mongodb";
 import { authOptions, isAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/mongodb";
+import { getBudjuBalance } from "@/lib/solana";
+import { getDiscountTier } from "@/types";
 
 export async function GET(
   req: NextRequest,
@@ -47,7 +49,26 @@ export async function GET(
     .limit(50)
     .toArray();
 
-  return NextResponse.json({ user, orders, subscriptions, ledger });
+  // Live BUDJU balance from on-chain (if wallet linked)
+  let liveBudjuBalance: number | null = null;
+  let discountTier = null;
+  if (user.walletAddress) {
+    try {
+      liveBudjuBalance = await getBudjuBalance(user.walletAddress);
+      discountTier = getDiscountTier(liveBudjuBalance || 0);
+    } catch (err) {
+      console.error("Failed to fetch BUDJU balance:", err);
+    }
+  }
+
+  return NextResponse.json({
+    user,
+    orders,
+    subscriptions,
+    ledger,
+    liveBudjuBalance,
+    discountTier,
+  });
 }
 
 export async function PATCH(

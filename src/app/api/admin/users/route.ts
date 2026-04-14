@@ -33,6 +33,7 @@ export async function GET() {
     balanceSOL: u.balanceSOL || 0,
     balanceBUDJU: u.balanceBUDJU || 0,
     disabled: u.disabled || false,
+    walletAddress: u.walletAddress || null,
   }));
 
   return NextResponse.json({ users: usersWithSubs });

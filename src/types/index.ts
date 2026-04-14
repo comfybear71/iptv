@@ -12,6 +12,9 @@ export interface User {
   balanceBUDJU?: number;
   autoRenew?: boolean;
   disabled?: boolean;
+  // Wallet linking
+  walletAddress?: string;
+  walletVerifiedAt?: Date;
 }
 
 export interface Order {
@@ -25,6 +28,12 @@ export interface Order {
   txHash: string;
   status: "pending" | "confirmed" | "provisioned" | "cancelled";
   notes?: string;
+  // Discount tracking
+  originalPriceUsd?: number;
+  discountPct?: number;
+  discountedPriceUsd?: number;
+  walletAddress?: string;
+  budjuBalanceAtPayment?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,7 +54,6 @@ export interface Subscription {
   };
   orderId: string;
   createdAt: Date;
-  // Optional audit fields
   lastRenewedAt?: Date;
   notes?: string;
 }
@@ -58,9 +66,9 @@ export interface LedgerEntry {
   currency: "SOL" | "BUDJU";
   amount: number;
   reason: string;
-  adminEmail?: string; // who made the entry (if admin action)
-  orderId?: string;   // related order if any
-  subscriptionId?: string; // related subscription if any
+  adminEmail?: string;
+  orderId?: string;
+  subscriptionId?: string;
   balanceAfterSOL: number;
   balanceAfterBUDJU: number;
   createdAt: Date;
@@ -76,33 +84,63 @@ export interface Plan {
   description: string;
 }
 
+// Option X pricing: 50% margin base, room for up to 20% discount
 export const PLANS: Plan[] = [
   {
     id: "lite",
     name: "Lite",
     connections: 1,
-    price: 10.4,
+    price: 14.0,
     description: "Perfect for personal use — 1 device at a time",
   },
   {
     id: "family",
     name: "Family",
     connections: 2,
-    price: 19.5,
+    price: 26.0,
     description: "Share with a partner — 2 devices at a time",
   },
   {
     id: "premium",
     name: "Premium",
     connections: 3,
-    price: 27.3,
+    price: 35.0,
     description: "For the household — 3 devices at a time",
   },
   {
     id: "titan",
     name: "Titan",
     connections: 4,
-    price: 33.8,
+    price: 42.0,
     description: "Maximum power — 4 devices at a time",
   },
 ];
+
+// BUDJU holder discount tiers (largest first)
+export const BUDJU_DISCOUNT_TIERS = [
+  { minBudju: 10_000_000, discountPct: 20, label: "Whale (10M+ BUDJU)" },
+  { minBudju: 5_000_000, discountPct: 15, label: "Holder (5M+ BUDJU)" },
+  { minBudju: 1_000_000, discountPct: 10, label: "Supporter (1M+ BUDJU)" },
+];
+
+export interface DiscountTier {
+  minBudju: number;
+  discountPct: number;
+  label: string;
+}
+
+export function getDiscountTier(budjuBalance: number): DiscountTier | null {
+  for (const tier of BUDJU_DISCOUNT_TIERS) {
+    if (budjuBalance >= tier.minBudju) return tier;
+  }
+  return null;
+}
+
+export function getDiscountPct(budjuBalance: number): number {
+  return getDiscountTier(budjuBalance)?.discountPct || 0;
+}
+
+export function applyDiscount(price: number, discountPct: number): number {
+  if (discountPct <= 0) return price;
+  return Math.round(price * (100 - discountPct)) / 100;
+}

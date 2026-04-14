@@ -14,6 +14,7 @@ interface UserData {
   balanceSOL?: number;
   balanceBUDJU?: number;
   disabled?: boolean;
+  walletAddress?: string;
 }
 
 export default function AdminUsersPage() {
@@ -68,6 +69,7 @@ export default function AdminUsersPage() {
                   <th className="pb-3 pr-4">Active Subs</th>
                   <th className="pb-3 pr-4">Balance (SOL)</th>
                   <th className="pb-3 pr-4">Balance (BUDJU)</th>
+                  <th className="pb-3 pr-4">Wallet</th>
                   <th className="pb-3 pr-4">Joined</th>
                   <th className="pb-3"></th>
                 </tr>
@@ -103,6 +105,11 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="py-3 pr-4 text-slate-300">
                       {(user.balanceBUDJU || 0).toFixed(2)}
+                    </td>
+                    <td className="py-3 pr-4 font-mono text-xs text-slate-500">
+                      {user.walletAddress
+                        ? `${user.walletAddress.slice(0, 4)}…${user.walletAddress.slice(-4)}`
+                        : "—"}
                     </td>
                     <td className="py-3 pr-4 text-slate-400">
                       {new Date(user.createdAt).toLocaleDateString()}
