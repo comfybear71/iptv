@@ -3,6 +3,7 @@ import dynamic from "next/dynamic";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
 import SessionWrapper from "@/components/SessionWrapper";
+import InAppBrowserWarning from "@/components/InAppBrowserWarning";
 
 // Wallet provider is client-only (Solana wallet adapter requires browser APIs)
 const WalletProvider = dynamic(() => import("@/components/WalletProvider"), {
@@ -25,6 +26,7 @@ export default function RootLayout({
         <SessionWrapper>
           <WalletProvider>
             <Navbar />
+            <InAppBrowserWarning />
             <main className="min-h-[calc(100vh-4rem)]">{children}</main>
             <footer className="border-t border-slate-800 py-6 text-center text-sm text-slate-500">
               &copy; {new Date().getFullYear()} ComfyTV. All rights reserved.

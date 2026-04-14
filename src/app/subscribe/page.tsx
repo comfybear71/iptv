@@ -1,6 +1,6 @@
 "use client";
 
-import { useSession } from "next-auth/react";
+import { useSession, signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, Suspense } from "react";
 import dynamic from "next/dynamic";
@@ -60,10 +60,6 @@ function SubscribeContent() {
   const budjuMint =
     process.env.NEXT_PUBLIC_BUDJU_MINT ||
     "2ajYe8eh8btUZRpaZ1v7ewWDkcYJmVGvPuDTU5xrpump";
-
-  useEffect(() => {
-    if (status === "unauthenticated") router.push("/");
-  }, [status, router]);
 
   useEffect(() => {
     const planId = searchParams.get("plan") as PlanType | null;
@@ -269,7 +265,77 @@ function SubscribeContent() {
     );
   }
 
-  if (!session) return null;
+  // Unauthenticated — show sign-in as explicit Step 1.
+  // Google OAuth must happen in the default browser (Safari/Chrome),
+  // NOT inside Phantom's in-app browser (which blocks OAuth).
+  if (!session) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-10">
+        <h1 className="text-2xl font-bold text-white">Subscribe</h1>
+        <p className="mt-1 text-sm text-slate-400">
+          Three quick steps to get streaming.
+        </p>
+
+        <ol className="mt-6 space-y-4">
+          <li className="rounded-xl border border-blue-500 bg-blue-900/20 p-5">
+            <div className="flex items-start gap-4">
+              <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 font-bold text-white">
+                1
+              </span>
+              <div className="flex-1">
+                <h2 className="font-semibold text-white">
+                  Sign in with Google
+                </h2>
+                <p className="mt-1 text-sm text-slate-300">
+                  Sign in first so we can link your subscription to your
+                  account.
+                </p>
+                <p className="mt-2 text-xs text-amber-300">
+                  ⚠️ Must be in Safari or Chrome — not Phantom&apos;s in-app
+                  browser (Google blocks OAuth there).
+                </p>
+                <button
+                  onClick={() => signIn("google")}
+                  className="mt-3 rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                >
+                  Sign in with Google
+                </button>
+              </div>
+            </div>
+          </li>
+          <li className="rounded-xl border border-slate-800 bg-slate-900/50 p-5 opacity-60">
+            <div className="flex items-start gap-4">
+              <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-700 font-bold text-white">
+                2
+              </span>
+              <div className="flex-1">
+                <h2 className="font-semibold text-white">
+                  Connect Phantom Wallet
+                </h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Link your wallet so we can verify BUDJU holdings for the
+                  discount.
+                </p>
+              </div>
+            </div>
+          </li>
+          <li className="rounded-xl border border-slate-800 bg-slate-900/50 p-5 opacity-60">
+            <div className="flex items-start gap-4">
+              <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-700 font-bold text-white">
+                3
+              </span>
+              <div className="flex-1">
+                <h2 className="font-semibold text-white">Pick plan & pay</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Sign the transaction in Phantom — order confirmed on-chain.
+                </p>
+              </div>
+            </div>
+          </li>
+        </ol>
+      </div>
+    );
+  }
 
   if (success) {
     return (
