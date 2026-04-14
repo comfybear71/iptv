@@ -25,6 +25,17 @@ import {
   applyDiscount,
   BUDJU_DISCOUNT_TIERS,
 } from "@/types";
+import {
+  isMobileDevice,
+  buildConnectUrl,
+  buildSignAndSendUrl,
+  parseConnectReturn,
+  parseSignReturn,
+  detectPhantomCallback,
+  cleanPhantomCallbackFromUrl,
+  getStoredPhantomSession,
+  clearPhantomSession,
+} from "@/lib/phantom-deeplink";
 
 const WalletMultiButton = dynamic(
   () =>
@@ -83,6 +94,12 @@ function SubscribeContent() {
   const [success, setSuccess] = useState(false);
   const [desiredChannelName, setDesiredChannelName] = useState("");
 
+  // Mobile Phantom deeplink state
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileWallet, setMobileWallet] = useState<string | null>(null);
+  const [mobileConnecting, setMobileConnecting] = useState(false);
+  const [mobileProcessing, setMobileProcessing] = useState(false);
+
   const solWallet =
     process.env.NEXT_PUBLIC_SOL_WALLET_ADDRESS || "";
   const budjuWallet =
@@ -116,6 +133,113 @@ function SubscribeContent() {
       });
   }, []);
 
+  // Mobile detection + Phantom deeplink callback handling
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mobile = isMobileDevice();
+    setIsMobile(mobile);
+    if (!mobile) return;
+
+    // Restore existing Phantom session if any
+    const stored = getStoredPhantomSession();
+    if (stored) {
+      setMobileWallet(stored.walletAddress);
+      fetchBalanceAndDiscount(stored.walletAddress);
+    }
+
+    // Restore pending plan selection (before redirect)
+    const pendingJson = sessionStorage.getItem("pending_plan_state");
+    if (pendingJson) {
+      try {
+        const pending = JSON.parse(pendingJson);
+        if (pending.planId) {
+          const p = PLANS.find((x) => x.id === pending.planId);
+          if (p) setSelectedPlan(p);
+        }
+        if (pending.currency) setCurrency(pending.currency);
+        if (pending.desiredChannelName)
+          setDesiredChannelName(pending.desiredChannelName);
+      } catch {
+        // ignore
+      }
+    }
+
+    // Check URL for Phantom callback
+    const urlParams = new URLSearchParams(window.location.search);
+    const callbackType = detectPhantomCallback(urlParams);
+
+    if (callbackType === "connect") {
+      try {
+        const result = parseConnectReturn(urlParams);
+        if (result) {
+          setMobileWallet(result.walletAddress);
+          fetchBalanceAndDiscount(result.walletAddress);
+        }
+      } catch (err: any) {
+        setError(err?.message || "Connect failed");
+      } finally {
+        cleanPhantomCallbackFromUrl();
+      }
+    } else if (callbackType === "sign") {
+      try {
+        const result = parseSignReturn(urlParams);
+        if (result?.signature) {
+          // We have a signature — verify with backend
+          verifyMobileSignature(result.signature);
+        }
+      } catch (err: any) {
+        setError(err?.message || "Sign failed");
+        setMobileProcessing(false);
+      } finally {
+        cleanPhantomCallbackFromUrl();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const verifyMobileSignature = useCallback(
+    async (signature: string) => {
+      setMobileProcessing(true);
+      try {
+        const pendingJson = sessionStorage.getItem("pending_plan_state");
+        if (!pendingJson) throw new Error("No pending plan — start over");
+        const pending = JSON.parse(pendingJson);
+        const stored = getStoredPhantomSession();
+        if (!stored) throw new Error("Wallet session lost — reconnect");
+
+        const res = await fetch("/api/orders/verify-tx", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            plan: pending.planId,
+            currency: pending.currency,
+            signature,
+            walletAddress: stored.walletAddress,
+            desiredChannelName: pending.desiredChannelName || undefined,
+          }),
+        });
+        const text = await res.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(
+            `Server error (${res.status}) — payment likely went through; check dashboard in a moment.`
+          );
+        }
+        if (!res.ok) throw new Error(data.error || "Verification failed");
+
+        sessionStorage.removeItem("pending_plan_state");
+        setSuccess(true);
+      } catch (err: any) {
+        setError(err?.message || "Verification failed");
+      } finally {
+        setMobileProcessing(false);
+      }
+    },
+    []
+  );
+
   // When wallet connects, verify + save + load balance
   useEffect(() => {
     if (!wallet.publicKey) return;
@@ -133,6 +257,41 @@ function SubscribeContent() {
       console.error("Balance fetch failed:", err);
     }
   };
+
+  // Mobile: redirect to Phantom connect
+  const mobileConnect = useCallback(() => {
+    if (!selectedPlan) {
+      setError("Pick a plan first");
+      return;
+    }
+    setMobileConnecting(true);
+    setError("");
+    try {
+      // Save state so we can restore after Phantom redirects back
+      sessionStorage.setItem(
+        "pending_plan_state",
+        JSON.stringify({
+          planId: selectedPlan.id,
+          currency,
+          desiredChannelName: desiredChannelName.trim(),
+        })
+      );
+      const redirectUrl = window.location.origin + "/subscribe";
+      const url = buildConnectUrl(redirectUrl);
+      window.location.href = url;
+    } catch (err: any) {
+      setError(err?.message || "Failed to build connect URL");
+      setMobileConnecting(false);
+    }
+  }, [selectedPlan, currency, desiredChannelName]);
+
+  // Mobile: disconnect wallet (clear session)
+  const mobileDisconnect = useCallback(() => {
+    clearPhantomSession();
+    setMobileWallet(null);
+    setBudjuBalance(null);
+    setDiscountPct(0);
+  }, []);
 
   const linkWallet = useCallback(async () => {
     if (!wallet.publicKey || !wallet.signMessage || !session?.user?.email) {
@@ -174,6 +333,118 @@ function SubscribeContent() {
   const budjuAmount = budjuRate
     ? (discountedPrice / budjuRate).toFixed(2)
     : null;
+
+  // Mobile: build tx and redirect to Phantom signAndSend deeplink
+  const mobilePay = useCallback(async () => {
+    if (!selectedPlan || !mobileWallet) return;
+    if (currency === "SOL" && !solWallet) {
+      setError("SOL recipient wallet not configured");
+      return;
+    }
+    if (currency === "BUDJU" && !budjuWallet) {
+      setError("BUDJU recipient wallet not configured");
+      return;
+    }
+
+    setMobileProcessing(true);
+    setError("");
+
+    try {
+      const payerPubkey = new PublicKey(mobileWallet);
+      const tx = new Transaction();
+
+      if (currency === "SOL") {
+        if (!solAmount) throw new Error("SOL price not loaded");
+        const recipient = new PublicKey(solWallet);
+        const lamports = Math.round(
+          parseFloat(solAmount) * LAMPORTS_PER_SOL
+        );
+        tx.add(
+          SystemProgram.transfer({
+            fromPubkey: payerPubkey,
+            toPubkey: recipient,
+            lamports,
+          })
+        );
+      } else {
+        if (!budjuAmount) throw new Error("BUDJU amount not loaded");
+        const recipient = new PublicKey(budjuWallet);
+        const mint = new PublicKey(budjuMint);
+
+        const fromAta = await getAssociatedTokenAddress(mint, payerPubkey);
+        const toAta = await getAssociatedTokenAddress(mint, recipient, true);
+
+        if (!(await accountExists(fromAta.toBase58()))) {
+          throw new Error(
+            "No BUDJU token account in your wallet — swap some SOL for BUDJU first at budju.xyz/swap"
+          );
+        }
+        if (!(await accountExists(toAta.toBase58()))) {
+          tx.add(
+            createAssociatedTokenAccountInstruction(
+              payerPubkey,
+              toAta,
+              recipient,
+              mint
+            )
+          );
+        }
+
+        const mintInfo = await rpcCall("getAccountInfo", [
+          mint.toBase58(),
+          { encoding: "jsonParsed" },
+        ]);
+        const decimals: number =
+          mintInfo?.value?.data?.parsed?.info?.decimals ?? 6;
+        const rawAmount = Math.round(
+          parseFloat(budjuAmount) * Math.pow(10, decimals)
+        );
+
+        tx.add(
+          createTransferInstruction(
+            fromAta,
+            toAta,
+            payerPubkey,
+            rawAmount,
+            [],
+            TOKEN_PROGRAM_ID
+          )
+        );
+      }
+
+      const bh = await rpcCall("getLatestBlockhash", [
+        { commitment: "finalized" },
+      ]);
+      tx.recentBlockhash = bh.value.blockhash;
+      tx.feePayer = payerPubkey;
+
+      sessionStorage.setItem(
+        "pending_plan_state",
+        JSON.stringify({
+          planId: selectedPlan.id,
+          currency,
+          desiredChannelName: desiredChannelName.trim(),
+        })
+      );
+
+      const redirectUrl = window.location.origin + "/subscribe";
+      const url = buildSignAndSendUrl({ transaction: tx, redirectUrl });
+      window.location.href = url;
+    } catch (err: any) {
+      setError(err?.message || "Failed to build payment");
+      setMobileProcessing(false);
+    }
+  }, [
+    selectedPlan,
+    mobileWallet,
+    currency,
+    solAmount,
+    budjuAmount,
+    solWallet,
+    budjuWallet,
+    budjuMint,
+    desiredChannelName,
+  ]);
 
   const handlePay = async () => {
     setError("");
@@ -426,8 +697,12 @@ function SubscribeContent() {
     );
   }
 
-  const connected = wallet.publicKey !== null;
-  const currentWalletStr = wallet.publicKey?.toString() || "";
+  // Mobile flow uses a stored wallet from the Phantom deeplink callback;
+  // desktop uses the wallet adapter's active publicKey.
+  const connected = isMobile ? !!mobileWallet : wallet.publicKey !== null;
+  const currentWalletStr = isMobile
+    ? mobileWallet || ""
+    : wallet.publicKey?.toString() || "";
   const walletMatchesLinked =
     linkedWallet && currentWalletStr && linkedWallet === currentWalletStr;
 
@@ -533,7 +808,19 @@ function SubscribeContent() {
                 Click below to connect.
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <WalletMultiButton />
+                {isMobile ? (
+                  <button
+                    onClick={mobileConnect}
+                    disabled={mobileConnecting}
+                    className="rounded-lg bg-purple-600 px-6 py-3 text-sm font-semibold text-white hover:bg-purple-500 disabled:opacity-50"
+                  >
+                    {mobileConnecting
+                      ? "Opening Phantom..."
+                      : "Connect Phantom App"}
+                  </button>
+                ) : (
+                  <WalletMultiButton />
+                )}
                 <a
                   href="https://phantom.app/download"
                   target="_blank"
@@ -544,7 +831,9 @@ function SubscribeContent() {
                 </a>
               </div>
               <p className="mt-3 text-xs text-slate-500">
-                On mobile: tap Connect → choose Phantom → approve in-app.
+                {isMobile
+                  ? "You'll be redirected to the Phantom app to approve, then back here automatically."
+                  : "On mobile: tap Connect → choose Phantom → approve in-app."}
               </p>
             </div>
           ) : (
@@ -558,7 +847,16 @@ function SubscribeContent() {
                     {currentWalletStr}
                   </p>
                 </div>
-                <WalletMultiButton />
+                {isMobile ? (
+                  <button
+                    onClick={mobileDisconnect}
+                    className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700"
+                  >
+                    Disconnect
+                  </button>
+                ) : (
+                  <WalletMultiButton />
+                )}
               </div>
 
               {/* Link to account if not linked / different */}
@@ -710,17 +1008,24 @@ function SubscribeContent() {
             )}
 
             <button
-              onClick={handlePay}
-              disabled={paying || !solAmount || !budjuAmount}
+              onClick={isMobile ? mobilePay : handlePay}
+              disabled={
+                (isMobile ? mobileProcessing : paying) ||
+                !solAmount ||
+                !budjuAmount
+              }
               className="mt-6 w-full rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {paying
-                ? "Processing..."
+              {(isMobile ? mobileProcessing : paying)
+                ? isMobile
+                  ? "Opening Phantom..."
+                  : "Processing..."
                 : `Sign & Pay ${currency === "SOL" ? solAmount : budjuAmount} ${currency}`}
             </button>
             <p className="mt-2 text-center text-[11px] text-slate-500">
-              Phantom will open and ask you to sign. Payment is verified
-              on-chain automatically.
+              {isMobile
+                ? "You'll be redirected to Phantom to approve, then back here to confirm your subscription."
+                : "Phantom will open and ask you to sign. Payment is verified on-chain automatically."}
             </p>
           </div>
         </div>

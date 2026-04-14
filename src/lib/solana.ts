@@ -119,8 +119,20 @@ export async function verifySolPayment(params: {
         error:
           "Transaction not found on-chain after 30s. It may still confirm — try again in a moment.",
       };
-    if (tx.meta?.err)
-      return { valid: false, error: "Transaction failed on-chain" };
+    if (tx.meta?.err) {
+      const errStr =
+        typeof tx.meta.err === "string"
+          ? tx.meta.err
+          : JSON.stringify(tx.meta.err);
+      const logs: string[] = tx.meta.logMessages || [];
+      const lastLog = logs.length
+        ? logs[logs.length - 1].replace(/^Program log: /, "")
+        : "";
+      return {
+        valid: false,
+        error: `Transaction failed on-chain: ${errStr}${lastLog ? ` — ${lastLog}` : ""}`,
+      };
+    }
 
     const accountKeys = tx.transaction.message.accountKeys.map((k: any) =>
       k.pubkey.toString()
@@ -178,8 +190,20 @@ export async function verifyBudjuPayment(params: {
         error:
           "Transaction not found on-chain after 30s. It may still confirm — try again in a moment.",
       };
-    if (tx.meta?.err)
-      return { valid: false, error: "Transaction failed on-chain" };
+    if (tx.meta?.err) {
+      const errStr =
+        typeof tx.meta.err === "string"
+          ? tx.meta.err
+          : JSON.stringify(tx.meta.err);
+      const logs: string[] = tx.meta.logMessages || [];
+      const lastLog = logs.length
+        ? logs[logs.length - 1].replace(/^Program log: /, "")
+        : "";
+      return {
+        valid: false,
+        error: `Transaction failed on-chain: ${errStr}${lastLog ? ` — ${lastLog}` : ""}`,
+      };
+    }
 
     const pre = tx.meta?.preTokenBalances || [];
     const post = tx.meta?.postTokenBalances || [];
