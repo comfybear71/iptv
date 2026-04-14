@@ -34,6 +34,35 @@ const WalletMultiButton = dynamic(
   { ssr: false }
 );
 
+// ---------- RPC proxy helpers ----------
+// All read-only Solana RPC calls go through our server proxy (/api/rpc),
+// so the Helius API key stays server-side. The wallet (Phantom) handles
+// tx broadcasting through its own RPC.
+async function rpcCall(method: string, params: any[]): Promise<any> {
+  const res = await fetch("/api/rpc", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  const text = await res.text();
+  let data: any = {};
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Server error (${res.status}) — response was not JSON`);
+  }
+  if (data.error) throw new Error(data.error.message || "RPC error");
+  return data.result;
+}
+
+async function accountExists(address: string): Promise<boolean> {
+  const result = await rpcCall("getAccountInfo", [
+    address,
+    { encoding: "base64" },
+  ]);
+  return result?.value !== null && result?.value !== undefined;
+}
+
 function SubscribeContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -186,11 +215,17 @@ function SubscribeContent() {
         const mint = new PublicKey(budjuMint);
 
         const fromAta = await getAssociatedTokenAddress(mint, payerPubkey);
-        const toAta = await getAssociatedTokenAddress(mint, recipient);
+        const toAta = await getAssociatedTokenAddress(mint, recipient, true);
 
-        // Check recipient ATA exists; if not, create it (payer pays rent)
-        const toAccInfo = await connection.getAccountInfo(toAta);
-        if (!toAccInfo) {
+        // Sender must already hold BUDJU
+        if (!(await accountExists(fromAta.toBase58()))) {
+          throw new Error(
+            "No BUDJU token account in your wallet — swap some SOL for BUDJU first at budju.xyz/swap"
+          );
+        }
+
+        // Create recipient ATA if it doesn't exist (payer pays rent)
+        if (!(await accountExists(toAta.toBase58()))) {
           tx.add(
             createAssociatedTokenAccountInstruction(
               payerPubkey,
@@ -201,10 +236,13 @@ function SubscribeContent() {
           );
         }
 
-        // Fetch mint decimals
-        const mintInfo = await connection.getParsedAccountInfo(mint);
+        // Fetch mint decimals via our RPC proxy
+        const mintInfo = await rpcCall("getAccountInfo", [
+          mint.toBase58(),
+          { encoding: "jsonParsed" },
+        ]);
         const decimals: number =
-          (mintInfo.value?.data as any)?.parsed?.info?.decimals ?? 6;
+          mintInfo?.value?.data?.parsed?.info?.decimals ?? 6;
         const rawAmount = Math.round(
           parseFloat(budjuAmount) * Math.pow(10, decimals)
         );
@@ -221,42 +259,23 @@ function SubscribeContent() {
         );
       }
 
-      // Set recent blockhash + fee payer.
-      // Fetch from server (using server-side Helius key) to avoid browser
-      // RPC restrictions / 403s.
-      const bhRes = await fetch("/api/solana/blockhash");
-      if (!bhRes.ok) {
-        throw new Error(
-          "Couldn't fetch blockhash. Check HELIUS_API_KEY is set in Vercel."
-        );
-      }
-      const { blockhash } = await bhRes.json();
-      tx.recentBlockhash = blockhash;
+      // Get a FINALIZED blockhash via our RPC proxy (stable, won't race-expire).
+      const bh = await rpcCall("getLatestBlockhash", [
+        { commitment: "finalized" },
+      ]);
+      tx.recentBlockhash = bh.value.blockhash;
       tx.feePayer = payerPubkey;
 
-      // Sign LOCALLY via wallet (Phantom popup).
-      if (!wallet.signTransaction) {
-        throw new Error("Wallet doesn't support signing");
+      // Wallet signs AND broadcasts via its OWN RPC (Phantom handles it).
+      // This is the critical fix — we don't relay the tx through our server,
+      // so no race conditions, no rate limits, no blockhash expiry issues.
+      if (!wallet.sendTransaction) {
+        throw new Error("Wallet doesn't support sendTransaction");
       }
-      const signed = await wallet.signTransaction(tx);
+      const signature = await wallet.sendTransaction(tx, connection);
 
-      // Broadcast via our server (bypasses any browser RPC restrictions).
-      const bytes = signed.serialize();
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-      const serialized = btoa(binary);
-      const sendRes = await fetch("/api/solana/send-tx", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signedTx: serialized }),
-      });
-      if (!sendRes.ok) {
-        const d = await sendRes.json();
-        throw new Error(d.error || "Broadcast failed");
-      }
-      const { signature } = await sendRes.json();
-
-      // Submit to backend for verification + order creation
+      // Submit signature to backend. Server polls getTransaction with
+      // finalized commitment until the tx is indexed, then creates the order.
       const res = await fetch("/api/orders/verify-tx", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -269,27 +288,24 @@ function SubscribeContent() {
         }),
       });
 
+      const resText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(resText);
+      } catch {
+        throw new Error(
+          `Server error (${res.status}) during verification. Your payment likely went through — check /dashboard in a moment.`
+        );
+      }
+
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.error || "Verification failed");
       }
 
       setSuccess(true);
     } catch (err: any) {
       console.error("Payment error:", err);
-      const msg = err?.message || "Payment failed";
-      // Detect common RPC config issues and surface actionable guidance
-      if (/403/i.test(msg) || /forbidden/i.test(msg)) {
-        setError(
-          "RPC access forbidden (403). Likely missing NEXT_PUBLIC_HELIUS_API_KEY in Vercel, or the Helius key has domain/IP restrictions blocking browser calls. Check Vercel env vars and the Helius dashboard, then try again."
-        );
-      } else if (/blockhash/i.test(msg)) {
-        setError(
-          `Couldn't fetch a recent blockhash: ${msg}. Verify HELIUS_API_KEY is set in Vercel and the key has no restrictions.`
-        );
-      } else {
-        setError(msg);
-      }
+      setError(err?.message || "Payment failed");
     } finally {
       setPaying(false);
     }

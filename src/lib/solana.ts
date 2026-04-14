@@ -60,9 +60,10 @@ export async function getBudjuDecimals(): Promise<number> {
 }
 
 /**
- * Fetch a parsed transaction, retrying for a while in case it hasn't
- * been indexed yet. Transactions can take 2-30 seconds to appear after
- * broadcast depending on RPC node sync.
+ * Fetch a parsed transaction, polling with FINALIZED commitment. Using
+ * finalized ensures the tx has been fully confirmed (~15-30s after
+ * broadcast) and is universally visible across RPC nodes. Fits within
+ * Vercel Pro's 60s function timeout.
  */
 async function getParsedTransactionWithRetry(
   connection: Connection,
@@ -73,7 +74,7 @@ async function getParsedTransactionWithRetry(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const tx = await connection.getParsedTransaction(signature, {
-        commitment: "confirmed",
+        commitment: "finalized",
         maxSupportedTransactionVersion: 0,
       });
       if (tx) return tx;
