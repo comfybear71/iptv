@@ -4,6 +4,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
 import AdminGuard from "@/components/AdminGuard";
 import { PLANS, PlanType } from "@/types";
+import {
+  buildMyBunnyM3uUrls,
+  COLLECTION_SIZES,
+  CollectionSize,
+} from "@/lib/mybunny";
 
 const DEFAULT_XTREME_HOST = "https://mybunny.tv";
 
@@ -31,6 +36,26 @@ function NewSubContent() {
   const [sendEmail, setSendEmail] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [collectionSize, setCollectionSize] = useState<CollectionSize>(2);
+
+  const autoFillM3u = () => {
+    if (!xtremeHost || !xtremeUsername || !xtremePassword) {
+      setError(
+        "Fill Xtreme Host, Username, and Password first, then click Auto-fill"
+      );
+      return;
+    }
+    setError("");
+    const urls = buildMyBunnyM3uUrls(
+      xtremeHost,
+      xtremeUsername,
+      xtremePassword,
+      collectionSize
+    );
+    setM3uUrlLiveTV(urls.liveTV);
+    setM3uUrlMovies(urls.movies);
+    setM3uUrlSeries(urls.series);
+  };
 
   const submit = async () => {
     setError("");
@@ -185,6 +210,35 @@ function NewSubContent() {
                 </div>
               </div>
 
+              <div className="flex flex-wrap items-end justify-between gap-2 pt-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  M3U Playlists
+                </span>
+                <div className="flex items-end gap-2">
+                  <select
+                    value={collectionSize}
+                    onChange={(e) =>
+                      setCollectionSize(
+                        Number(e.target.value) as CollectionSize
+                      )
+                    }
+                    className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-white"
+                  >
+                    {COLLECTION_SIZES.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={autoFillM3u}
+                    className="rounded-lg bg-blue-700 px-3 py-1 text-xs font-medium text-white hover:bg-blue-600"
+                  >
+                    Auto-fill
+                  </button>
+                </div>
+              </div>
               <input
                 type="text"
                 value={m3uUrlLiveTV}

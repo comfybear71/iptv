@@ -4,6 +4,11 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import AdminGuard from "@/components/AdminGuard";
 import { PLANS } from "@/types";
+import {
+  buildMyBunnyM3uUrls,
+  COLLECTION_SIZES,
+  CollectionSize,
+} from "@/lib/mybunny";
 
 interface OrderData {
   _id: string;
@@ -46,6 +51,26 @@ export default function AdminOrderDetailPage() {
   const [m3uUrlAll, setM3uUrlAll] = useState("");
   const [channelName, setChannelName] = useState("");
   const [webPlayerUrl, setWebPlayerUrl] = useState("");
+  const [collectionSize, setCollectionSize] = useState<CollectionSize>(2);
+
+  const autoFillM3u = () => {
+    if (!xtremeHost || !xtremeUsername || !xtremePassword) {
+      setError(
+        "Fill Xtreme Host, Username, and Password first, then click Auto-fill"
+      );
+      return;
+    }
+    setError("");
+    const urls = buildMyBunnyM3uUrls(
+      xtremeHost,
+      xtremeUsername,
+      xtremePassword,
+      collectionSize
+    );
+    setM3uUrlLiveTV(urls.liveTV);
+    setM3uUrlMovies(urls.movies);
+    setM3uUrlSeries(urls.series);
+  };
 
   useEffect(() => {
     fetch(`/api/admin/orders/${params.id}`)
@@ -301,13 +326,46 @@ export default function AdminOrderDetailPage() {
 
                     {/* M3U section */}
                     <div className="mt-5 border-t border-slate-800 pt-4">
-                      <h4 className="text-sm font-semibold text-white">
-                        M3U Playlists
-                      </h4>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Separate URLs for TV / Movies / Series (plus an
-                        optional combined playlist).
-                      </p>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-semibold text-white">
+                            M3U Playlists
+                          </h4>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Auto-fill from Xtreme creds above, or paste
+                            manually.
+                          </p>
+                        </div>
+                        <div className="flex items-end gap-2">
+                          <div>
+                            <label className="text-[11px] text-slate-400">
+                              Collection Size
+                            </label>
+                            <select
+                              value={collectionSize}
+                              onChange={(e) =>
+                                setCollectionSize(
+                                  Number(e.target.value) as CollectionSize
+                                )
+                              }
+                              className="mt-1 rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-xs text-white"
+                            >
+                              {COLLECTION_SIZES.map((s) => (
+                                <option key={s.value} value={s.value}>
+                                  {s.label} ({s.description})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={autoFillM3u}
+                            className="rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-600"
+                          >
+                            Auto-fill M3U URLs
+                          </button>
+                        </div>
+                      </div>
                       <div className="mt-3 space-y-3">
                         <div>
                           <label className="text-xs text-slate-400">
