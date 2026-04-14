@@ -60,6 +60,34 @@ export async function getBudjuDecimals(): Promise<number> {
 }
 
 /**
+ * Fetch a parsed transaction, retrying for a while in case it hasn't
+ * been indexed yet. Transactions can take 2-30 seconds to appear after
+ * broadcast depending on RPC node sync.
+ */
+async function getParsedTransactionWithRetry(
+  connection: Connection,
+  signature: string,
+  maxAttempts = 15,
+  delayMs = 2000
+): Promise<any> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const tx = await connection.getParsedTransaction(signature, {
+        commitment: "confirmed",
+        maxSupportedTransactionVersion: 0,
+      });
+      if (tx) return tx;
+    } catch (err) {
+      // ignore and retry
+    }
+    if (attempt < maxAttempts - 1) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  return null;
+}
+
+/**
  * Verify a SOL transfer:
  * - Checks tx confirmed + no error
  * - Checks sender's balance decreased by >= expected amount
@@ -78,16 +106,18 @@ export async function verifySolPayment(params: {
   const connection = getConnection();
 
   try {
-    const tx = await connection.getParsedTransaction(signature, {
-      commitment: "confirmed",
-      maxSupportedTransactionVersion: 0,
-    });
+    const tx = await getParsedTransactionWithRetry(connection, signature);
 
-    if (!tx) return { valid: false, error: "Transaction not found on-chain" };
+    if (!tx)
+      return {
+        valid: false,
+        error:
+          "Transaction not found on-chain after 30s. It may still confirm — try again in a moment.",
+      };
     if (tx.meta?.err)
       return { valid: false, error: "Transaction failed on-chain" };
 
-    const accountKeys = tx.transaction.message.accountKeys.map((k) =>
+    const accountKeys = tx.transaction.message.accountKeys.map((k: any) =>
       k.pubkey.toString()
     );
     const recipientIdx = accountKeys.indexOf(expectedRecipient);
@@ -135,12 +165,14 @@ export async function verifyBudjuPayment(params: {
   const connection = getConnection();
 
   try {
-    const tx = await connection.getParsedTransaction(signature, {
-      commitment: "confirmed",
-      maxSupportedTransactionVersion: 0,
-    });
+    const tx = await getParsedTransactionWithRetry(connection, signature);
 
-    if (!tx) return { valid: false, error: "Transaction not found on-chain" };
+    if (!tx)
+      return {
+        valid: false,
+        error:
+          "Transaction not found on-chain after 30s. It may still confirm — try again in a moment.",
+      };
     if (tx.meta?.err)
       return { valid: false, error: "Transaction failed on-chain" };
 
