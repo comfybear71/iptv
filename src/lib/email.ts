@@ -5,7 +5,7 @@ const resend = process.env.RESEND_API_KEY
   : null;
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "sfrench71@gmail.com";
-const FROM_EMAIL = "ComfyTV <onboarding@resend.dev>";
+const FROM_EMAIL = "ComfyTV <noreply@comfytv.xyz>";
 
 export async function sendAdminNewOrderEmail(order: {
   userEmail: string;
