@@ -5,12 +5,10 @@ import { useState, Suspense } from "react";
 import AdminGuard from "@/components/AdminGuard";
 import { PLANS, PlanType } from "@/types";
 import {
-  buildMyBunnyM3uUrls,
   COLLECTION_SIZES,
   CollectionSize,
+  DEFAULT_XTREME_HOST,
 } from "@/lib/mybunny";
-
-const DEFAULT_XTREME_HOST = "https://mybunny.tv";
 
 function NewSubContent() {
   const router = useRouter();
@@ -25,37 +23,13 @@ function NewSubContent() {
   const [xtremeHost, setXtremeHost] = useState(DEFAULT_XTREME_HOST);
   const [xtremeUsername, setXtremeUsername] = useState("");
   const [xtremePassword, setXtremePassword] = useState("");
-  const [m3uUrlLiveTV, setM3uUrlLiveTV] = useState("");
-  const [m3uUrlMovies, setM3uUrlMovies] = useState("");
-  const [m3uUrlSeries, setM3uUrlSeries] = useState("");
-  const [m3uUrlAll, setM3uUrlAll] = useState("");
+  const [collectionSize, setCollectionSize] = useState<CollectionSize>(2);
   const [channelName, setChannelName] = useState("");
-  const [webPlayerUrl, setWebPlayerUrl] = useState("");
 
   const [notes, setNotes] = useState("");
   const [sendEmail, setSendEmail] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [collectionSize, setCollectionSize] = useState<CollectionSize>(2);
-
-  const autoFillM3u = () => {
-    if (!xtremeHost || !xtremeUsername || !xtremePassword) {
-      setError(
-        "Fill Xtreme Host, Username, and Password first, then click Auto-fill"
-      );
-      return;
-    }
-    setError("");
-    const urls = buildMyBunnyM3uUrls(
-      xtremeHost,
-      xtremeUsername,
-      xtremePassword,
-      collectionSize
-    );
-    setM3uUrlLiveTV(urls.liveTV);
-    setM3uUrlMovies(urls.movies);
-    setM3uUrlSeries(urls.series);
-  };
 
   const submit = async () => {
     setError("");
@@ -65,20 +39,7 @@ function NewSubContent() {
     }
     setSaving(true);
 
-    const credentials = {
-      xtremeHost: xtremeHost.trim(),
-      xtremeUsername: xtremeUsername.trim(),
-      xtremePassword: xtremePassword.trim(),
-      m3uUrlLiveTV: m3uUrlLiveTV.trim(),
-      m3uUrlMovies: m3uUrlMovies.trim(),
-      m3uUrlSeries: m3uUrlSeries.trim(),
-      m3uUrlAll: m3uUrlAll.trim(),
-      channelName: channelName.trim(),
-      webPlayerUrl: webPlayerUrl.trim(),
-    };
-
-    const hasAnyCred = Object.values(credentials).some((v) => v);
-
+    const hasAnyCred = xtremeUsername.trim() && xtremePassword.trim();
     const body: any = {
       userId,
       plan,
@@ -86,7 +47,15 @@ function NewSubContent() {
       notes,
       sendEmail,
     };
-    if (hasAnyCred) body.credentials = credentials;
+    if (hasAnyCred) {
+      body.credentials = {
+        xtremeHost: xtremeHost.trim() || DEFAULT_XTREME_HOST,
+        xtremeUsername: xtremeUsername.trim(),
+        xtremePassword: xtremePassword.trim(),
+        collectionSize,
+        channelName: channelName.trim(),
+      };
+    }
 
     const res = await fetch("/api/admin/subscriptions", {
       method: "POST",
@@ -174,113 +143,52 @@ function NewSubContent() {
 
             <div className="mt-3 space-y-3">
               <div>
-                <label className="text-xs text-slate-400">
-                  Xtreme Host
-                </label>
+                <label className="text-xs text-slate-400">Host</label>
                 <input
                   type="text"
                   value={xtremeHost}
                   onChange={(e) => setXtremeHost(e.target.value)}
-                  placeholder="https://mybunny.tv"
                   className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
                 />
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="text-xs text-slate-400">
-                    Xtreme Username
-                  </label>
-                  <input
-                    type="text"
-                    value={xtremeUsername}
-                    onChange={(e) => setXtremeUsername(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-400">
-                    Xtreme Password
-                  </label>
-                  <input
-                    type="text"
-                    value={xtremePassword}
-                    onChange={(e) => setXtremePassword(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
-                  />
-                </div>
+                <input
+                  type="text"
+                  value={xtremeUsername}
+                  onChange={(e) => setXtremeUsername(e.target.value)}
+                  placeholder="Xtreme Username"
+                  className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-sm text-white placeholder-slate-500"
+                />
+                <input
+                  type="text"
+                  value={xtremePassword}
+                  onChange={(e) => setXtremePassword(e.target.value)}
+                  placeholder="Xtreme Password"
+                  className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-sm text-white placeholder-slate-500"
+                />
               </div>
-
-              <div className="flex flex-wrap items-end justify-between gap-2 pt-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  M3U Playlists
-                </span>
-                <div className="flex items-end gap-2">
-                  <select
-                    value={collectionSize}
-                    onChange={(e) =>
-                      setCollectionSize(
-                        Number(e.target.value) as CollectionSize
-                      )
-                    }
-                    className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-white"
-                  >
-                    {COLLECTION_SIZES.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={autoFillM3u}
-                    className="rounded-lg bg-blue-700 px-3 py-1 text-xs font-medium text-white hover:bg-blue-600"
-                  >
-                    Auto-fill
-                  </button>
-                </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <select
+                  value={collectionSize}
+                  onChange={(e) =>
+                    setCollectionSize(Number(e.target.value) as CollectionSize)
+                  }
+                  className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                >
+                  {COLLECTION_SIZES.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={channelName}
+                  onChange={(e) => setChannelName(e.target.value)}
+                  placeholder="Channel name"
+                  className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500"
+                />
               </div>
-              <input
-                type="text"
-                value={m3uUrlLiveTV}
-                onChange={(e) => setM3uUrlLiveTV(e.target.value)}
-                placeholder="Live TV M3U (optional)"
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder-slate-500"
-              />
-              <input
-                type="text"
-                value={m3uUrlMovies}
-                onChange={(e) => setM3uUrlMovies(e.target.value)}
-                placeholder="Movies M3U (optional)"
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder-slate-500"
-              />
-              <input
-                type="text"
-                value={m3uUrlSeries}
-                onChange={(e) => setM3uUrlSeries(e.target.value)}
-                placeholder="Series M3U (optional)"
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder-slate-500"
-              />
-              <input
-                type="text"
-                value={m3uUrlAll}
-                onChange={(e) => setM3uUrlAll(e.target.value)}
-                placeholder="All-in-one M3U (optional)"
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder-slate-500"
-              />
-              <input
-                type="text"
-                value={channelName}
-                onChange={(e) => setChannelName(e.target.value)}
-                placeholder="Channel name (optional)"
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500"
-              />
-              <input
-                type="text"
-                value={webPlayerUrl}
-                onChange={(e) => setWebPlayerUrl(e.target.value)}
-                placeholder="Web player URL (optional)"
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500"
-              />
             </div>
           </div>
 

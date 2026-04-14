@@ -41,19 +41,14 @@ export interface Order {
 }
 
 export interface SubscriptionCredentials {
-  // Xtreme API (primary — most apps use these)
-  xtremeHost?: string; // e.g. https://mybunny.tv
+  // Xtreme API — primary credentials from MyBunny.TV
+  xtremeHost?: string;      // e.g. https://mybunny.tv
   xtremeUsername?: string;
   xtremePassword?: string;
-  // M3U playlist URLs (optional — MyBunny gives separate ones per category)
-  m3uUrlLiveTV?: string;
-  m3uUrlMovies?: string;
-  m3uUrlSeries?: string;
-  m3uUrlAll?: string; // combined playlist if provided
+  // Collection size for Movies/Series M3U URLs (1=Compact, 2=Standard, 3=Extensive, 4=Complete)
+  collectionSize?: 1 | 2 | 3 | 4;
   // User preferences
-  channelName?: string; // custom username chosen by customer
-  // Web player (watch in browser)
-  webPlayerUrl?: string;
+  channelName?: string; // custom name chosen by customer
 }
 
 export interface Subscription {

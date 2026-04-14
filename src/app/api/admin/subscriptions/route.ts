@@ -15,17 +15,16 @@ function sanitizeCredentials(
     "xtremeHost",
     "xtremeUsername",
     "xtremePassword",
-    "m3uUrlLiveTV",
-    "m3uUrlMovies",
-    "m3uUrlSeries",
-    "m3uUrlAll",
     "channelName",
-    "webPlayerUrl",
   ];
   for (const f of strFields) {
     if (typeof raw[f] === "string" && raw[f].trim()) {
       (c as any)[f] = raw[f].trim();
     }
+  }
+  const size = Number(raw.collectionSize);
+  if ([1, 2, 3, 4].includes(size)) {
+    c.collectionSize = size as 1 | 2 | 3 | 4;
   }
   return Object.keys(c).length ? c : undefined;
 }
