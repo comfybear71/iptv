@@ -22,13 +22,16 @@ export default function WalletProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const endpoint = useMemo(() => {
-    const key = process.env.NEXT_PUBLIC_HELIUS_API_KEY;
-    if (key) {
-      return `https://mainnet.helius-rpc.com/?api-key=${key}`;
-    }
-    return "https://api.mainnet-beta.solana.com";
-  }, []);
+  // The ConnectionProvider endpoint is only used as a context for the
+  // Solana wallet adapter. Phantom broadcasts transactions through its
+  // OWN RPC (not this endpoint), and we fetch blockhash from our server
+  // (/api/solana/blockhash) which uses the server-side Helius key.
+  // So we can safely use Solana's free public RPC here — no API key
+  // exposed to the browser.
+  const endpoint = useMemo(
+    () => "https://api.mainnet-beta.solana.com",
+    []
+  );
 
   const wallets = useMemo(() => [new PhantomWalletAdapter()], []);
 

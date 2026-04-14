@@ -1,8 +1,8 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 
 export function getRpcUrl(): string {
-  const key =
-    process.env.HELIUS_API_KEY || process.env.NEXT_PUBLIC_HELIUS_API_KEY;
+  // Server-side only — never exposed to browser.
+  const key = process.env.HELIUS_API_KEY;
   if (key) {
     return `https://mainnet.helius-rpc.com/?api-key=${key}`;
   }

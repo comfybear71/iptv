@@ -221,16 +221,30 @@ function SubscribeContent() {
         );
       }
 
-      // Set recent blockhash + fee payer
-      const { blockhash } = await connection.getLatestBlockhash();
+      // Set recent blockhash + fee payer.
+      // Fetch from server (using server-side Helius key) to avoid browser
+      // RPC restrictions / 403s.
+      const bhRes = await fetch("/api/solana/blockhash");
+      if (!bhRes.ok) {
+        throw new Error(
+          "Couldn't fetch blockhash. Check that HELIUS_API_KEY is set in Vercel."
+        );
+      }
+      const { blockhash } = await bhRes.json();
       tx.recentBlockhash = blockhash;
       tx.feePayer = payerPubkey;
 
-      // Sign + send via wallet
+      // Sign + send via wallet. Phantom uses its own RPC for broadcasting
+      // so this works even if the client-side connection is restricted.
       const signature = await wallet.sendTransaction(tx, connection);
 
-      // Wait for confirmation
-      await connection.confirmTransaction(signature, "confirmed");
+      // Wait for confirmation using the server endpoint if possible
+      try {
+        await connection.confirmTransaction(signature, "confirmed");
+      } catch {
+        // Confirmation may fail due to client RPC restrictions — the tx
+        // is still on-chain. Backend verification will confirm.
+      }
 
       // Submit to backend for verification + order creation
       const res = await fetch("/api/orders/verify-tx", {
@@ -253,7 +267,19 @@ function SubscribeContent() {
       setSuccess(true);
     } catch (err: any) {
       console.error("Payment error:", err);
-      setError(err?.message || "Payment failed");
+      const msg = err?.message || "Payment failed";
+      // Detect common RPC config issues and surface actionable guidance
+      if (/403/i.test(msg) || /forbidden/i.test(msg)) {
+        setError(
+          "RPC access forbidden (403). Likely missing NEXT_PUBLIC_HELIUS_API_KEY in Vercel, or the Helius key has domain/IP restrictions blocking browser calls. Check Vercel env vars and the Helius dashboard, then try again."
+        );
+      } else if (/blockhash/i.test(msg)) {
+        setError(
+          `Couldn't fetch a recent blockhash: ${msg}. Verify HELIUS_API_KEY is set in Vercel and the key has no restrictions.`
+        );
+      } else {
+        setError(msg);
+      }
     } finally {
       setPaying(false);
     }
