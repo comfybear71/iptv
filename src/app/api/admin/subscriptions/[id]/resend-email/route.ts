@@ -29,7 +29,11 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (!sub.credentials) {
+  const hasAny =
+    sub.credentials &&
+    Object.values(sub.credentials).some((v) => v);
+
+  if (!hasAny) {
     return NextResponse.json(
       { error: "Subscription has no credentials" },
       { status: 400 }
@@ -41,9 +45,7 @@ export async function POST(
   try {
     await sendCustomerCredentialsEmail(sub.userEmail, {
       plan: planInfo?.name || sub.plan,
-      m3uUrl: sub.credentials.m3uUrl,
-      username: sub.credentials.username,
-      password: sub.credentials.password,
+      credentials: sub.credentials,
     });
   } catch (err: any) {
     return NextResponse.json(

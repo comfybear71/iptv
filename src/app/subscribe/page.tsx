@@ -52,6 +52,7 @@ function SubscribeContent() {
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [desiredChannelName, setDesiredChannelName] = useState("");
 
   const solWallet =
     process.env.NEXT_PUBLIC_SOL_WALLET_ADDRESS || "";
@@ -240,6 +241,7 @@ function SubscribeContent() {
           currency,
           signature,
           walletAddress: payerPubkey.toString(),
+          desiredChannelName: desiredChannelName.trim() || undefined,
         }),
       });
 
@@ -434,11 +436,42 @@ function SubscribeContent() {
         </div>
       </div>
 
-      {/* Step 2: Connect wallet */}
+      {/* Step 1.5: Choose your channel name */}
       {selectedPlan && (
         <div className="mt-8">
           <h2 className="text-lg font-semibold text-white">
-            Step 2: Connect Phantom Wallet
+            Step 2: Choose Your Channel Name
+          </h2>
+          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/50 p-5">
+            <label className="text-sm text-slate-300">
+              Preferred username (optional)
+            </label>
+            <input
+              type="text"
+              value={desiredChannelName}
+              onChange={(e) =>
+                setDesiredChannelName(
+                  e.target.value.replace(/[^a-zA-Z0-9_-]/g, "")
+                )
+              }
+              maxLength={30}
+              placeholder="e.g. comfy_watcher_01"
+              className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Letters, numbers, hyphens, and underscores only. We&apos;ll use
+              this when setting up your streaming account. If taken, we&apos;ll
+              suggest an alternative.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: Connect wallet */}
+      {selectedPlan && (
+        <div className="mt-8">
+          <h2 className="text-lg font-semibold text-white">
+            Step 3: Connect Phantom Wallet
           </h2>
 
           {!connected ? (
@@ -557,10 +590,10 @@ function SubscribeContent() {
         </div>
       )}
 
-      {/* Step 3: Pick currency + pay */}
+      {/* Step 4: Pick currency + pay */}
       {selectedPlan && connected && (
         <div className="mt-8">
-          <h2 className="text-lg font-semibold text-white">Step 3: Pay</h2>
+          <h2 className="text-lg font-semibold text-white">Step 4: Pay</h2>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <button

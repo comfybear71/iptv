@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { plan, currency, signature, walletAddress } = body;
+  const { plan, currency, signature, walletAddress, desiredChannelName } = body;
 
   if (!plan || !currency || !signature || !walletAddress) {
     return NextResponse.json(
@@ -140,6 +140,11 @@ export async function POST(req: NextRequest) {
   }
 
   // Create confirmed order
+  const cleanedChannelName =
+    typeof desiredChannelName === "string"
+      ? desiredChannelName.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 30)
+      : undefined;
+
   const result = await db.collection("orders").insertOne({
     userId: user._id.toString(),
     userEmail: user.email,
@@ -149,6 +154,7 @@ export async function POST(req: NextRequest) {
     currency,
     txHash: signature,
     status: "confirmed",
+    desiredChannelName: cleanedChannelName || undefined,
     originalPriceUsd: validPlan.price,
     discountPct,
     discountedPriceUsd,

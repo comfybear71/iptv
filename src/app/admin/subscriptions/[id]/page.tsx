@@ -3,7 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import AdminGuard from "@/components/AdminGuard";
-import { PLANS } from "@/types";
+import { PLANS, SubscriptionCredentials } from "@/types";
 
 interface SubData {
   _id: string;
@@ -14,12 +14,14 @@ interface SubData {
   status: string;
   startDate: string;
   endDate: string;
-  credentials?: { m3uUrl: string; username: string; password: string };
+  credentials?: SubscriptionCredentials;
   orderId: string;
   notes?: string;
   lastRenewedAt?: string;
   createdAt: string;
 }
+
+const DEFAULT_XTREME_HOST = "https://mybunny.tv";
 
 export default function AdminSubscriptionDetailPage() {
   const params = useParams();
@@ -28,9 +30,16 @@ export default function AdminSubscriptionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
-  const [m3uUrl, setM3uUrl] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  // Credential fields
+  const [xtremeHost, setXtremeHost] = useState(DEFAULT_XTREME_HOST);
+  const [xtremeUsername, setXtremeUsername] = useState("");
+  const [xtremePassword, setXtremePassword] = useState("");
+  const [m3uUrlLiveTV, setM3uUrlLiveTV] = useState("");
+  const [m3uUrlMovies, setM3uUrlMovies] = useState("");
+  const [m3uUrlSeries, setM3uUrlSeries] = useState("");
+  const [m3uUrlAll, setM3uUrlAll] = useState("");
+  const [channelName, setChannelName] = useState("");
+  const [webPlayerUrl, setWebPlayerUrl] = useState("");
   const [notes, setNotes] = useState("");
 
   const load = async () => {
@@ -38,9 +47,16 @@ export default function AdminSubscriptionDetailPage() {
     const data = await res.json();
     if (data.subscription) {
       setSub(data.subscription);
-      setM3uUrl(data.subscription.credentials?.m3uUrl || "");
-      setUsername(data.subscription.credentials?.username || "");
-      setPassword(data.subscription.credentials?.password || "");
+      const c = data.subscription.credentials || {};
+      setXtremeHost(c.xtremeHost || DEFAULT_XTREME_HOST);
+      setXtremeUsername(c.xtremeUsername || "");
+      setXtremePassword(c.xtremePassword || "");
+      setM3uUrlLiveTV(c.m3uUrlLiveTV || "");
+      setM3uUrlMovies(c.m3uUrlMovies || "");
+      setM3uUrlSeries(c.m3uUrlSeries || "");
+      setM3uUrlAll(c.m3uUrlAll || "");
+      setChannelName(c.channelName || "");
+      setWebPlayerUrl(c.webPlayerUrl || "");
       setNotes(data.subscription.notes || "");
     }
     setLoading(false);
@@ -67,11 +83,21 @@ export default function AdminSubscriptionDetailPage() {
     setTimeout(() => setMsg(""), 3000);
   };
 
-  const saveCredentials = () =>
-    patch(
-      { credentials: { m3uUrl, username, password } },
-      "Credentials updated"
-    );
+  const saveCredentials = () => {
+    const credentials = {
+      xtremeHost: xtremeHost.trim(),
+      xtremeUsername: xtremeUsername.trim(),
+      xtremePassword: xtremePassword.trim(),
+      m3uUrlLiveTV: m3uUrlLiveTV.trim(),
+      m3uUrlMovies: m3uUrlMovies.trim(),
+      m3uUrlSeries: m3uUrlSeries.trim(),
+      m3uUrlAll: m3uUrlAll.trim(),
+      channelName: channelName.trim(),
+      webPlayerUrl: webPlayerUrl.trim(),
+    };
+    patch({ credentials }, "Credentials updated");
+  };
+
   const extendBy = (months: number) =>
     patch({ extendMonths: months }, `Extended by ${months} month(s)`);
   const cancel = () => patch({ status: "cancelled" }, "Subscription cancelled");
@@ -93,6 +119,10 @@ export default function AdminSubscriptionDetailPage() {
     }
     setTimeout(() => setMsg(""), 3000);
   };
+
+  const hasAnyCredential =
+    !!sub?.credentials &&
+    Object.values(sub.credentials).some((v) => v);
 
   return (
     <AdminGuard>
@@ -123,10 +153,7 @@ export default function AdminSubscriptionDetailPage() {
             {/* Summary */}
             <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/50 p-6">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field
-                  label="Customer"
-                  value={sub.userEmail}
-                />
+                <Field label="Customer" value={sub.userEmail} />
                 <Field
                   label="Plan"
                   value={
@@ -161,10 +188,7 @@ export default function AdminSubscriptionDetailPage() {
                   label="End"
                   value={new Date(sub.endDate).toLocaleDateString()}
                 />
-                <Field
-                  label="Order ID"
-                  value={sub.orderId}
-                />
+                <Field label="Order ID" value={sub.orderId} />
                 {sub.lastRenewedAt && (
                   <Field
                     label="Last renewed"
@@ -231,53 +255,114 @@ export default function AdminSubscriptionDetailPage() {
 
             {/* Credentials */}
             <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/50 p-6">
-              <h3 className="text-sm font-semibold text-white">Credentials</h3>
-              <div className="mt-3 space-y-3">
-                <div>
-                  <label className="text-xs text-slate-400">M3U URL</label>
+              <h3 className="text-sm font-semibold text-white">
+                MyBunny.TV Credentials
+              </h3>
+
+              <div className="mt-4 border-t border-slate-800 pt-4">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Xtreme API
+                </h4>
+                <div className="mt-2 space-y-3">
                   <input
                     type="text"
-                    value={m3uUrl}
-                    onChange={(e) => setM3uUrl(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                    value={xtremeHost}
+                    onChange={(e) => setXtremeHost(e.target.value)}
+                    placeholder="Host (https://mybunny.tv)"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                  />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input
+                      type="text"
+                      value={xtremeUsername}
+                      onChange={(e) => setXtremeUsername(e.target.value)}
+                      placeholder="Username"
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                    />
+                    <input
+                      type="text"
+                      value={xtremePassword}
+                      onChange={(e) => setXtremePassword(e.target.value)}
+                      placeholder="Password"
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 border-t border-slate-800 pt-4">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  M3U Playlists
+                </h4>
+                <div className="mt-2 space-y-2">
+                  <input
+                    type="text"
+                    value={m3uUrlLiveTV}
+                    onChange={(e) => setM3uUrlLiveTV(e.target.value)}
+                    placeholder="Live TV M3U URL"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white"
+                  />
+                  <input
+                    type="text"
+                    value={m3uUrlMovies}
+                    onChange={(e) => setM3uUrlMovies(e.target.value)}
+                    placeholder="Movies M3U URL"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white"
+                  />
+                  <input
+                    type="text"
+                    value={m3uUrlSeries}
+                    onChange={(e) => setM3uUrlSeries(e.target.value)}
+                    placeholder="Series M3U URL"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white"
+                  />
+                  <input
+                    type="text"
+                    value={m3uUrlAll}
+                    onChange={(e) => setM3uUrlAll(e.target.value)}
+                    placeholder="All-in-one M3U URL (optional)"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white"
                   />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="text-xs text-slate-400">Username</label>
-                    <input
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-400">Password</label>
-                    <input
-                      type="text"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
-                    />
-                  </div>
+              </div>
+
+              <div className="mt-4 border-t border-slate-800 pt-4">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Display + Web
+                </h4>
+                <div className="mt-2 space-y-2">
+                  <input
+                    type="text"
+                    value={channelName}
+                    onChange={(e) => setChannelName(e.target.value)}
+                    placeholder="Channel name shown to customer"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                  />
+                  <input
+                    type="text"
+                    value={webPlayerUrl}
+                    onChange={(e) => setWebPlayerUrl(e.target.value)}
+                    placeholder="Web player URL (optional)"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                  />
                 </div>
-                <div className="flex gap-2">
+              </div>
+
+              <div className="mt-5 flex gap-2">
+                <button
+                  onClick={saveCredentials}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                >
+                  Save Credentials
+                </button>
+                {hasAnyCredential && (
                   <button
-                    onClick={saveCredentials}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                    onClick={resendEmail}
+                    className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-600"
                   >
-                    Save Credentials
+                    Resend to Customer
                   </button>
-                  {sub.credentials && (
-                    <button
-                      onClick={resendEmail}
-                      className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-600"
-                    >
-                      Resend to Customer
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
             </div>
 

@@ -23,9 +23,15 @@ interface SubscriptionData {
   startDate: string;
   endDate: string;
   credentials?: {
-    m3uUrl: string;
-    username: string;
-    password: string;
+    xtremeHost?: string;
+    xtremeUsername?: string;
+    xtremePassword?: string;
+    m3uUrlLiveTV?: string;
+    m3uUrlMovies?: string;
+    m3uUrlSeries?: string;
+    m3uUrlAll?: string;
+    channelName?: string;
+    webPlayerUrl?: string;
   };
 }
 
@@ -93,7 +99,7 @@ export default function DashboardPage() {
             </button>
           </div>
         ) : (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="mt-4 space-y-6">
             {activeSubs.map((sub) => {
               const planInfo = PLANS.find((p) => p.id === sub.plan);
               return (
@@ -116,39 +122,7 @@ export default function DashboardPage() {
                     {new Date(sub.endDate).toLocaleDateString()}
                   </p>
 
-                  {sub.credentials && (
-                    <div className="mt-4 space-y-2 rounded-lg bg-slate-800/50 p-4">
-                      <h4 className="text-sm font-medium text-white">
-                        Streaming Credentials
-                      </h4>
-                      <div>
-                        <label className="text-xs text-slate-500">
-                          M3U URL
-                        </label>
-                        <div className="mt-0.5 break-all rounded bg-slate-900 px-3 py-1.5 text-xs text-slate-300 font-mono">
-                          {sub.credentials.m3uUrl}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-xs text-slate-500">
-                            Username
-                          </label>
-                          <div className="mt-0.5 rounded bg-slate-900 px-3 py-1.5 text-xs text-slate-300 font-mono">
-                            {sub.credentials.username}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-slate-500">
-                            Password
-                          </label>
-                          <div className="mt-0.5 rounded bg-slate-900 px-3 py-1.5 text-xs text-slate-300 font-mono">
-                            {sub.credentials.password}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  {sub.credentials && <CredentialsCard creds={sub.credentials} />}
                 </div>
               );
             })}
@@ -208,6 +182,133 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+interface CredsShape {
+  xtremeHost?: string;
+  xtremeUsername?: string;
+  xtremePassword?: string;
+  m3uUrlLiveTV?: string;
+  m3uUrlMovies?: string;
+  m3uUrlSeries?: string;
+  m3uUrlAll?: string;
+  channelName?: string;
+  webPlayerUrl?: string;
+}
+
+function CopyField({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // ignore
+    }
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 min-w-0">
+        <label className="text-xs text-slate-500">{label}</label>
+        <div className="mt-0.5 break-all rounded bg-slate-900 px-3 py-1.5 font-mono text-xs text-slate-200">
+          {value}
+        </div>
+      </div>
+      <button
+        onClick={copy}
+        className="mt-5 flex-shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
+      >
+        {copied ? "✓" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
+function CredentialsCard({ creds }: { creds: CredsShape }) {
+  const hasXtreme =
+    creds.xtremeHost || creds.xtremeUsername || creds.xtremePassword;
+  const hasM3u =
+    creds.m3uUrlAll ||
+    creds.m3uUrlLiveTV ||
+    creds.m3uUrlMovies ||
+    creds.m3uUrlSeries;
+
+  return (
+    <div className="mt-5 rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+      <h4 className="text-sm font-semibold text-white">
+        Your Streaming Credentials
+      </h4>
+
+      {creds.channelName && (
+        <div className="mt-3">
+          <CopyField label="Channel name" value={creds.channelName} />
+        </div>
+      )}
+
+      {hasXtreme && (
+        <div className="mt-5 border-t border-slate-800 pt-4">
+          <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Xtreme API (IPTV Smarters / TiviMate / OTT Nav)
+          </h5>
+          <div className="mt-3 space-y-3">
+            {creds.xtremeHost && (
+              <CopyField label="Host / Portal URL" value={creds.xtremeHost} />
+            )}
+            {creds.xtremeUsername && (
+              <CopyField label="Username" value={creds.xtremeUsername} />
+            )}
+            {creds.xtremePassword && (
+              <CopyField label="Password" value={creds.xtremePassword} />
+            )}
+          </div>
+        </div>
+      )}
+
+      {hasM3u && (
+        <div className="mt-5 border-t border-slate-800 pt-4">
+          <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            M3U Playlists
+          </h5>
+          <div className="mt-3 space-y-3">
+            {creds.m3uUrlAll && (
+              <CopyField label="All channels" value={creds.m3uUrlAll} />
+            )}
+            {creds.m3uUrlLiveTV && (
+              <CopyField label="Live TV" value={creds.m3uUrlLiveTV} />
+            )}
+            {creds.m3uUrlMovies && (
+              <CopyField label="Movies" value={creds.m3uUrlMovies} />
+            )}
+            {creds.m3uUrlSeries && (
+              <CopyField label="Series" value={creds.m3uUrlSeries} />
+            )}
+          </div>
+        </div>
+      )}
+
+      {creds.webPlayerUrl && (
+        <div className="mt-5 border-t border-slate-800 pt-4">
+          <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Watch in Browser
+          </h5>
+          <a
+            href={creds.webPlayerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-block rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-500"
+          >
+            Open Web Player →
+          </a>
+        </div>
+      )}
+
+      <p className="mt-4 text-xs text-slate-500">
+        These credentials are always available here in your dashboard. Bookmark
+        this page.
+      </p>
     </div>
   );
 }

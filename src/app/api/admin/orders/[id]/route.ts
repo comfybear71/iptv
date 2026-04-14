@@ -4,7 +4,7 @@ import { ObjectId } from "mongodb";
 import { authOptions, isAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/mongodb";
 import { sendCustomerCredentialsEmail } from "@/lib/email";
-import { PLANS } from "@/types";
+import { PLANS, SubscriptionCredentials } from "@/types";
 
 export async function GET(
   req: NextRequest,
@@ -30,6 +30,30 @@ export async function GET(
   }
 
   return NextResponse.json({ order });
+}
+
+function sanitizeCredentials(
+  raw: any
+): SubscriptionCredentials | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const c: SubscriptionCredentials = {};
+  const strFields: (keyof SubscriptionCredentials)[] = [
+    "xtremeHost",
+    "xtremeUsername",
+    "xtremePassword",
+    "m3uUrlLiveTV",
+    "m3uUrlMovies",
+    "m3uUrlSeries",
+    "m3uUrlAll",
+    "channelName",
+    "webPlayerUrl",
+  ];
+  for (const f of strFields) {
+    if (typeof raw[f] === "string" && raw[f].trim()) {
+      (c as any)[f] = raw[f].trim();
+    }
+  }
+  return Object.keys(c).length ? c : undefined;
 }
 
 export async function PATCH(
@@ -70,6 +94,14 @@ export async function PATCH(
 
   // If provisioning with credentials, create/update subscription and email customer
   if (status === "provisioned" && credentials) {
+    const cleanCreds = sanitizeCredentials(credentials);
+    if (!cleanCreds) {
+      return NextResponse.json(
+        { error: "At least one credential field is required" },
+        { status: 400 }
+      );
+    }
+
     const planInfo = PLANS.find((p) => p.id === order.plan);
     const now = new Date();
     const endDate = new Date(now);
@@ -86,11 +118,7 @@ export async function PATCH(
           status: "active",
           startDate: now,
           endDate,
-          credentials: {
-            m3uUrl: credentials.m3uUrl,
-            username: credentials.username,
-            password: credentials.password,
-          },
+          credentials: cleanCreds,
           orderId: params.id,
           createdAt: now,
         },
@@ -101,9 +129,7 @@ export async function PATCH(
     try {
       await sendCustomerCredentialsEmail(order.userEmail, {
         plan: planInfo?.name || order.plan,
-        m3uUrl: credentials.m3uUrl,
-        username: credentials.username,
-        password: credentials.password,
+        credentials: cleanCreds,
       });
     } catch (err) {
       console.error("Failed to send customer email:", err);

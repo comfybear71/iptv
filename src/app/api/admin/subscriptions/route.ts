@@ -4,7 +4,31 @@ import { ObjectId } from "mongodb";
 import { authOptions, isAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/mongodb";
 import { sendCustomerCredentialsEmail } from "@/lib/email";
-import { PLANS, PlanType } from "@/types";
+import { PLANS, PlanType, SubscriptionCredentials } from "@/types";
+
+function sanitizeCredentials(
+  raw: any
+): SubscriptionCredentials | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const c: SubscriptionCredentials = {};
+  const strFields: (keyof SubscriptionCredentials)[] = [
+    "xtremeHost",
+    "xtremeUsername",
+    "xtremePassword",
+    "m3uUrlLiveTV",
+    "m3uUrlMovies",
+    "m3uUrlSeries",
+    "m3uUrlAll",
+    "channelName",
+    "webPlayerUrl",
+  ];
+  for (const f of strFields) {
+    if (typeof raw[f] === "string" && raw[f].trim()) {
+      (c as any)[f] = raw[f].trim();
+    }
+  }
+  return Object.keys(c).length ? c : undefined;
+}
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -78,26 +102,20 @@ export async function POST(req: NextRequest) {
     createdAt: new Date(),
   };
 
-  if (
-    credentials &&
-    credentials.m3uUrl &&
-    credentials.username &&
-    credentials.password
-  ) {
-    sub.credentials = credentials;
+  const cleanCreds = sanitizeCredentials(credentials);
+  if (cleanCreds) {
+    sub.credentials = cleanCreds;
   }
 
   if (notes) sub.notes = notes;
 
   const result = await db.collection("subscriptions").insertOne(sub);
 
-  if (sendEmail && sub.credentials) {
+  if (sendEmail && cleanCreds) {
     try {
       await sendCustomerCredentialsEmail(user.email, {
         plan: planInfo.name,
-        m3uUrl: sub.credentials.m3uUrl,
-        username: sub.credentials.username,
-        password: sub.credentials.password,
+        credentials: cleanCreds,
       });
     } catch (err) {
       console.error("Failed to send customer email:", err);

@@ -5,6 +5,8 @@ import { useState, Suspense } from "react";
 import AdminGuard from "@/components/AdminGuard";
 import { PLANS, PlanType } from "@/types";
 
+const DEFAULT_XTREME_HOST = "https://mybunny.tv";
+
 function NewSubContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -14,9 +16,17 @@ function NewSubContent() {
   const [userId, setUserId] = useState(prefillUserId);
   const [plan, setPlan] = useState<PlanType>("lite");
   const [months, setMonths] = useState(1);
-  const [m3uUrl, setM3uUrl] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+
+  const [xtremeHost, setXtremeHost] = useState(DEFAULT_XTREME_HOST);
+  const [xtremeUsername, setXtremeUsername] = useState("");
+  const [xtremePassword, setXtremePassword] = useState("");
+  const [m3uUrlLiveTV, setM3uUrlLiveTV] = useState("");
+  const [m3uUrlMovies, setM3uUrlMovies] = useState("");
+  const [m3uUrlSeries, setM3uUrlSeries] = useState("");
+  const [m3uUrlAll, setM3uUrlAll] = useState("");
+  const [channelName, setChannelName] = useState("");
+  const [webPlayerUrl, setWebPlayerUrl] = useState("");
+
   const [notes, setNotes] = useState("");
   const [sendEmail, setSendEmail] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -29,6 +39,21 @@ function NewSubContent() {
       return;
     }
     setSaving(true);
+
+    const credentials = {
+      xtremeHost: xtremeHost.trim(),
+      xtremeUsername: xtremeUsername.trim(),
+      xtremePassword: xtremePassword.trim(),
+      m3uUrlLiveTV: m3uUrlLiveTV.trim(),
+      m3uUrlMovies: m3uUrlMovies.trim(),
+      m3uUrlSeries: m3uUrlSeries.trim(),
+      m3uUrlAll: m3uUrlAll.trim(),
+      channelName: channelName.trim(),
+      webPlayerUrl: webPlayerUrl.trim(),
+    };
+
+    const hasAnyCred = Object.values(credentials).some((v) => v);
+
     const body: any = {
       userId,
       plan,
@@ -36,9 +61,7 @@ function NewSubContent() {
       notes,
       sendEmail,
     };
-    if (m3uUrl && username && password) {
-      body.credentials = { m3uUrl, username, password };
-    }
+    if (hasAnyCred) body.credentials = credentials;
 
     const res = await fetch("/api/admin/subscriptions", {
       method: "POST",
@@ -123,30 +146,87 @@ function NewSubContent() {
             <p className="text-xs text-slate-500">
               Leave blank to provision later.
             </p>
+
             <div className="mt-3 space-y-3">
-              <input
-                type="text"
-                value={m3uUrl}
-                onChange={(e) => setM3uUrl(e.target.value)}
-                placeholder="M3U URL"
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500"
-              />
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-xs text-slate-400">
+                  Xtreme Host
+                </label>
                 <input
                   type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Username"
-                  className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500"
-                />
-                <input
-                  type="text"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Password"
-                  className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500"
+                  value={xtremeHost}
+                  onChange={(e) => setXtremeHost(e.target.value)}
+                  placeholder="https://mybunny.tv"
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
                 />
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs text-slate-400">
+                    Xtreme Username
+                  </label>
+                  <input
+                    type="text"
+                    value={xtremeUsername}
+                    onChange={(e) => setXtremeUsername(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400">
+                    Xtreme Password
+                  </label>
+                  <input
+                    type="text"
+                    value={xtremePassword}
+                    onChange={(e) => setXtremePassword(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                  />
+                </div>
+              </div>
+
+              <input
+                type="text"
+                value={m3uUrlLiveTV}
+                onChange={(e) => setM3uUrlLiveTV(e.target.value)}
+                placeholder="Live TV M3U (optional)"
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder-slate-500"
+              />
+              <input
+                type="text"
+                value={m3uUrlMovies}
+                onChange={(e) => setM3uUrlMovies(e.target.value)}
+                placeholder="Movies M3U (optional)"
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder-slate-500"
+              />
+              <input
+                type="text"
+                value={m3uUrlSeries}
+                onChange={(e) => setM3uUrlSeries(e.target.value)}
+                placeholder="Series M3U (optional)"
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder-slate-500"
+              />
+              <input
+                type="text"
+                value={m3uUrlAll}
+                onChange={(e) => setM3uUrlAll(e.target.value)}
+                placeholder="All-in-one M3U (optional)"
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder-slate-500"
+              />
+              <input
+                type="text"
+                value={channelName}
+                onChange={(e) => setChannelName(e.target.value)}
+                placeholder="Channel name (optional)"
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500"
+              />
+              <input
+                type="text"
+                value={webPlayerUrl}
+                onChange={(e) => setWebPlayerUrl(e.target.value)}
+                placeholder="Web player URL (optional)"
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500"
+              />
             </div>
           </div>
 
@@ -167,7 +247,7 @@ function NewSubContent() {
               onChange={(e) => setSendEmail(e.target.checked)}
               className="rounded border-slate-600 bg-slate-800"
             />
-            Email customer credentials (only if credentials provided)
+            Email customer credentials (only if any are provided)
           </label>
 
           {error && <p className="text-sm text-red-400">{error}</p>}
