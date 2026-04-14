@@ -227,24 +227,34 @@ function SubscribeContent() {
       const bhRes = await fetch("/api/solana/blockhash");
       if (!bhRes.ok) {
         throw new Error(
-          "Couldn't fetch blockhash. Check that HELIUS_API_KEY is set in Vercel."
+          "Couldn't fetch blockhash. Check HELIUS_API_KEY is set in Vercel."
         );
       }
       const { blockhash } = await bhRes.json();
       tx.recentBlockhash = blockhash;
       tx.feePayer = payerPubkey;
 
-      // Sign + send via wallet. Phantom uses its own RPC for broadcasting
-      // so this works even if the client-side connection is restricted.
-      const signature = await wallet.sendTransaction(tx, connection);
-
-      // Wait for confirmation using the server endpoint if possible
-      try {
-        await connection.confirmTransaction(signature, "confirmed");
-      } catch {
-        // Confirmation may fail due to client RPC restrictions — the tx
-        // is still on-chain. Backend verification will confirm.
+      // Sign LOCALLY via wallet (Phantom popup).
+      if (!wallet.signTransaction) {
+        throw new Error("Wallet doesn't support signing");
       }
+      const signed = await wallet.signTransaction(tx);
+
+      // Broadcast via our server (bypasses any browser RPC restrictions).
+      const bytes = signed.serialize();
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const serialized = btoa(binary);
+      const sendRes = await fetch("/api/solana/send-tx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signedTx: serialized }),
+      });
+      if (!sendRes.ok) {
+        const d = await sendRes.json();
+        throw new Error(d.error || "Broadcast failed");
+      }
+      const { signature } = await sendRes.json();
 
       // Submit to backend for verification + order creation
       const res = await fetch("/api/orders/verify-tx", {
