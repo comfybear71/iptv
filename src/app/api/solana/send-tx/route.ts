@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConnection } from "@/lib/solana";
 
+export const maxDuration = 30;
+
 // POST /api/solana/send-tx
 // Body: { signedTx: string (base64-encoded serialized Transaction) }
 // Broadcasts the signed transaction via the server-side Helius RPC and

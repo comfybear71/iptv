@@ -15,6 +15,10 @@ import {
   getDiscountPct,
 } from "@/types";
 
+// Allow up to 45 seconds for tx verification (polls up to 30s for tx
+// to appear on-chain plus buffer for other work).
+export const maxDuration = 45;
+
 // POST /api/orders/verify-tx
 // Body: { plan, currency ("SOL"|"BUDJU"), signature, walletAddress }
 // 1. Fetches current rates + user's BUDJU holdings (for discount)
