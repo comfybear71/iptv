@@ -74,6 +74,9 @@ export default function DashboardPage() {
         Welcome back, {session.user?.name}
       </p>
 
+      {/* Balance */}
+      <BalanceCard />
+
       {/* Active Subscriptions */}
       <div className="mt-8">
         <h2 className="text-lg font-semibold text-white">
@@ -205,6 +208,47 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function BalanceCard() {
+  const [bal, setBal] = useState<{
+    balanceSOL: number;
+    balanceBUDJU: number;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/me")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.user) {
+          setBal({
+            balanceSOL: data.user.balanceSOL || 0,
+            balanceBUDJU: data.user.balanceBUDJU || 0,
+          });
+        }
+      });
+  }, []);
+
+  if (!bal || (bal.balanceSOL === 0 && bal.balanceBUDJU === 0)) return null;
+
+  return (
+    <div className="mt-6 rounded-xl border border-blue-800 bg-blue-900/20 p-4">
+      <p className="text-xs uppercase tracking-wide text-blue-400">
+        Your ComfyTV Balance
+      </p>
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-6 gap-y-1">
+        <span className="text-xl font-bold text-white">
+          {bal.balanceSOL.toFixed(4)} SOL
+        </span>
+        <span className="text-xl font-bold text-white">
+          {bal.balanceBUDJU.toFixed(2)} BUDJU
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-slate-400">
+        Use your balance to subscribe instantly — no waiting for tx confirmation.
+      </p>
     </div>
   );
 }

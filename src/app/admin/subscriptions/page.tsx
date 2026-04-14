@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import AdminGuard from "@/components/AdminGuard";
 import { PLANS } from "@/types";
@@ -19,9 +20,12 @@ interface SubData {
   };
 }
 
+type Filter = "all" | "active" | "expiring" | "expired" | "cancelled";
+
 export default function AdminSubscriptionsPage() {
   const [subscriptions, setSubscriptions] = useState<SubData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<Filter>("all");
 
   useEffect(() => {
     fetch("/api/admin/subscriptions")
@@ -32,15 +36,64 @@ export default function AdminSubscriptionsPage() {
       });
   }, []);
 
+  const now = new Date();
+  const sevenDays = new Date(now);
+  sevenDays.setDate(sevenDays.getDate() + 7);
+
+  const filtered = subscriptions.filter((s) => {
+    if (filter === "all") return true;
+    if (filter === "active") return s.status === "active";
+    if (filter === "expired") return s.status === "expired";
+    if (filter === "cancelled") return s.status === "cancelled";
+    if (filter === "expiring") {
+      const end = new Date(s.endDate);
+      return s.status === "active" && end <= sevenDays && end >= now;
+    }
+    return true;
+  });
+
+  const expiringCount = subscriptions.filter((s) => {
+    const end = new Date(s.endDate);
+    return s.status === "active" && end <= sevenDays && end >= now;
+  }).length;
+
   return (
     <AdminGuard>
       <div className="mx-auto max-w-6xl px-4 py-10">
-        <h1 className="text-2xl font-bold text-white">Subscriptions</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-bold text-white">Subscriptions</h1>
+          <Link
+            href="/admin/subscriptions/new"
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+          >
+            + Add Manual
+          </Link>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(["all", "active", "expiring", "expired", "cancelled"] as Filter[]).map(
+            (f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium capitalize ${
+                  filter === f
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-800 text-slate-400 hover:text-white"
+                }`}
+              >
+                {f === "expiring" ? `Expiring soon (${expiringCount})` : f}
+              </button>
+            )
+          )}
+        </div>
 
         {loading ? (
           <div className="mt-8 text-slate-400">Loading...</div>
-        ) : subscriptions.length === 0 ? (
-          <div className="mt-8 text-slate-400">No subscriptions yet.</div>
+        ) : filtered.length === 0 ? (
+          <div className="mt-8 text-slate-400">
+            No subscriptions match this filter.
+          </div>
         ) : (
           <div className="mt-6 overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -52,12 +105,18 @@ export default function AdminSubscriptionsPage() {
                   <th className="pb-3 pr-4">Status</th>
                   <th className="pb-3 pr-4">Start</th>
                   <th className="pb-3 pr-4">End</th>
-                  <th className="pb-3">Has Credentials</th>
+                  <th className="pb-3 pr-4">Creds</th>
+                  <th className="pb-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/50">
-                {subscriptions.map((sub) => {
+                {filtered.map((sub) => {
                   const planInfo = PLANS.find((p) => p.id === sub.plan);
+                  const end = new Date(sub.endDate);
+                  const isExpiringSoon =
+                    sub.status === "active" &&
+                    end <= sevenDays &&
+                    end >= now;
                   return (
                     <tr key={sub._id}>
                       <td className="py-3 pr-4 text-slate-300">
@@ -74,7 +133,9 @@ export default function AdminSubscriptionsPage() {
                           className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                             sub.status === "active"
                               ? "bg-green-900/50 text-green-400"
-                              : "bg-red-900/50 text-red-400"
+                              : sub.status === "cancelled"
+                                ? "bg-red-900/50 text-red-400"
+                                : "bg-slate-800 text-slate-400"
                           }`}
                         >
                           {sub.status}
@@ -83,11 +144,27 @@ export default function AdminSubscriptionsPage() {
                       <td className="py-3 pr-4 text-slate-400">
                         {new Date(sub.startDate).toLocaleDateString()}
                       </td>
-                      <td className="py-3 pr-4 text-slate-400">
-                        {new Date(sub.endDate).toLocaleDateString()}
+                      <td className="py-3 pr-4">
+                        <span
+                          className={
+                            isExpiringSoon
+                              ? "text-amber-400"
+                              : "text-slate-400"
+                          }
+                        >
+                          {end.toLocaleDateString()}
+                        </span>
                       </td>
-                      <td className="py-3 text-slate-400">
+                      <td className="py-3 pr-4 text-slate-400">
                         {sub.credentials ? "Yes" : "No"}
+                      </td>
+                      <td className="py-3">
+                        <Link
+                          href={`/admin/subscriptions/${sub._id}`}
+                          className="rounded bg-slate-700 px-2 py-1 text-xs text-white hover:bg-slate-600"
+                        >
+                          Manage
+                        </Link>
                       </td>
                     </tr>
                   );

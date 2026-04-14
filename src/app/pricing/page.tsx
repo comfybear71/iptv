@@ -43,25 +43,28 @@ export default function PricingPage() {
 
       <div className="mt-16 rounded-xl border border-slate-800 bg-slate-900/50 p-8">
         <h2 className="text-xl font-bold text-white">Payment Methods</h2>
-        <div className="mt-6 grid gap-6 sm:grid-cols-3">
+        <div className="mt-6 grid gap-6 sm:grid-cols-2">
           <div>
             <h3 className="font-semibold text-white">Solana (SOL)</h3>
             <p className="mt-1 text-sm text-slate-400">
-              Pay with SOL. Price converted from USD at the current market rate
-              via CoinGecko.
+              Pay with SOL from your Phantom wallet. Price converted from USD
+              at the current market rate via CoinGecko.
             </p>
           </div>
           <div>
             <h3 className="font-semibold text-white">BUDJU Token</h3>
             <p className="mt-1 text-sm text-slate-400">
-              Pay with BUDJU tokens. Accepted at a fixed or market rate.
-            </p>
-          </div>
-          <div>
-            <h3 className="font-semibold text-white">AIGlitch</h3>
-            <p className="mt-1 text-sm text-slate-400">
-              Purchase BUDJU or GLITCH tokens through AIGlitch, then complete
-              payment here.
+              Pay with BUDJU from your Phantom wallet. Don&apos;t have BUDJU?
+              Swap at{" "}
+              <a
+                href="https://www.budju.xyz/swap"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 underline"
+              >
+                budju.xyz/swap
+              </a>
+              . Holders of 1M+ BUDJU may qualify for discounts.
             </p>
           </div>
         </div>

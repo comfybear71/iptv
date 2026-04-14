@@ -9,13 +9,24 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@solana/spl-token": "^0.4.14",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/wallet-adapter-wallets": "^0.19.38",
+    "@solana/web3.js": "^1.98.4",
     "mongodb": "^6.12.0",
     "next": "14.2.21",
     "next-auth": "^4.24.11",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "resend": "^4.1.2"
+    "resend": "^4.1.2",
+    "tweetnacl": "^1.0.3"
+  },
+  "overrides": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.9",
