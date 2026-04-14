@@ -24,6 +24,8 @@ import {
   PlanType,
   applyDiscount,
   BUDJU_DISCOUNT_TIERS,
+  computeOrderTotalUsd,
+  getCycleDiscount,
 } from "@/types";
 import {
   isMobileDevice,
@@ -82,6 +84,7 @@ function SubscribeContent() {
   const wallet = useWallet();
 
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [months, setMonths] = useState<number>(1);
   const [currency, setCurrency] = useState<"SOL" | "BUDJU">("SOL");
   const [solPrice, setSolPrice] = useState<number | null>(null);
   const [budjuRate, setBudjuRate] = useState<number>(0.01);
@@ -113,6 +116,10 @@ function SubscribeContent() {
     if (planId) {
       const p = PLANS.find((x) => x.id === planId);
       if (p) setSelectedPlan(p);
+    }
+    const m = parseInt(searchParams.get("months") || "");
+    if ([1, 3, 6, 12].includes(m)) {
+      setMonths(m);
     }
   }, [searchParams]);
 
@@ -155,6 +162,9 @@ function SubscribeContent() {
         if (pending.planId) {
           const p = PLANS.find((x) => x.id === pending.planId);
           if (p) setSelectedPlan(p);
+        }
+        if (pending.months && [1, 3, 6, 12].includes(pending.months)) {
+          setMonths(pending.months);
         }
         if (pending.currency) setCurrency(pending.currency);
         if (pending.desiredChannelName)
@@ -212,6 +222,7 @@ function SubscribeContent() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             plan: pending.planId,
+            months: pending.months || 1,
             currency: pending.currency,
             signature,
             walletAddress: stored.walletAddress,
@@ -272,6 +283,7 @@ function SubscribeContent() {
         "pending_plan_state",
         JSON.stringify({
           planId: selectedPlan.id,
+          months,
           currency,
           desiredChannelName: desiredChannelName.trim(),
         })
@@ -324,9 +336,17 @@ function SubscribeContent() {
     }
   }, [wallet, session]);
 
-  // Pricing
-  const originalPrice = selectedPlan?.price || 0;
-  const discountedPrice = applyDiscount(originalPrice, discountPct);
+  // Pricing — multi-month + BUDJU holder discounts stack
+  const totals = selectedPlan
+    ? computeOrderTotalUsd({
+        monthlyPrice: selectedPlan.price,
+        months,
+        budjuDiscountPct: discountPct,
+      })
+    : { subtotal: 0, cycleDiscountPct: 0, budjuDiscountPct: 0, finalUsd: 0 };
+  const originalPrice = totals.subtotal;
+  const discountedPrice = totals.finalUsd;
+  const cycleDiscountPct = totals.cycleDiscountPct;
   const solAmount = solPrice
     ? (discountedPrice / solPrice).toFixed(4)
     : null;
@@ -422,6 +442,7 @@ function SubscribeContent() {
         "pending_plan_state",
         JSON.stringify({
           planId: selectedPlan.id,
+          months,
           currency,
           desiredChannelName: desiredChannelName.trim(),
         })
@@ -552,6 +573,7 @@ function SubscribeContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           plan: selectedPlan.id,
+          months,
           currency,
           signature,
           walletAddress: payerPubkey.toString(),
