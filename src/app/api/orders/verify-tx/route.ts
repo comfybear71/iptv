@@ -11,19 +11,14 @@ import {
 import {
   PLANS,
   PlanType,
-  applyDiscount,
   getDiscountPct,
+  computeOrderTotalUsd,
 } from "@/types";
 
-// Allow up to 45 seconds for tx verification (polls up to 30s for tx
-// to appear on-chain plus buffer for other work).
 export const maxDuration = 45;
 
 // POST /api/orders/verify-tx
-// Body: { plan, currency ("SOL"|"BUDJU"), signature, walletAddress }
-// 1. Fetches current rates + user's BUDJU holdings (for discount)
-// 2. Verifies on-chain: tx succeeded, recipient correct, amount within tolerance
-// 3. Creates confirmed order + notifies admin
+// Body: { plan, months, currency, signature, walletAddress, desiredChannelName? }
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
@@ -31,7 +26,14 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { plan, currency, signature, walletAddress, desiredChannelName } = body;
+  const {
+    plan,
+    months: rawMonths,
+    currency,
+    signature,
+    walletAddress,
+    desiredChannelName,
+  } = body;
 
   if (!plan || !currency || !signature || !walletAddress) {
     return NextResponse.json(
@@ -39,10 +41,12 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-
   if (!["SOL", "BUDJU"].includes(currency)) {
     return NextResponse.json({ error: "Invalid currency" }, { status: 400 });
   }
+  const months = [1, 3, 6, 12].includes(Number(rawMonths))
+    ? Number(rawMonths)
+    : 1;
 
   const validPlan = PLANS.find((p) => p.id === (plan as PlanType));
   if (!validPlan) {
@@ -51,7 +55,6 @@ export async function POST(req: NextRequest) {
 
   const db = await getDb();
 
-  // Prevent replay — each signature can be used only once
   const existing = await db.collection("orders").findOne({ txHash: signature });
   if (existing) {
     return NextResponse.json(
@@ -67,15 +70,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  // Fetch user's BUDJU balance in the paying wallet → apply discount
   const budjuBalance = await getBudjuBalance(walletAddress);
   const discountPct = getDiscountPct(budjuBalance);
-  const discountedPriceUsd = applyDiscount(validPlan.price, discountPct);
 
-  // Determine expected on-chain amount
+  // Total = monthlyPrice × months × (1 − cycleDiscount) × (1 − budjuDiscount)
+  const totals = computeOrderTotalUsd({
+    monthlyPrice: validPlan.price,
+    months,
+    budjuDiscountPct: discountPct,
+  });
+
   let expectedAmount: number;
   if (currency === "SOL") {
-    // Get current SOL price
     let solPrice: number | null = null;
     try {
       const res = await fetch(
@@ -96,13 +102,12 @@ export async function POST(req: NextRequest) {
         { status: 503 }
       );
     }
-    expectedAmount = parseFloat((discountedPriceUsd / solPrice).toFixed(4));
+    expectedAmount = parseFloat((totals.finalUsd / solPrice).toFixed(4));
   } else {
     const budjuRate = parseFloat(process.env.BUDJU_USD_RATE || "0.01");
-    expectedAmount = parseFloat((discountedPriceUsd / budjuRate).toFixed(2));
+    expectedAmount = parseFloat((totals.finalUsd / budjuRate).toFixed(2));
   }
 
-  // Verify on-chain
   const recipient =
     currency === "SOL"
       ? process.env.SOL_WALLET_ADDRESS ||
@@ -133,17 +138,20 @@ export async function POST(req: NextRequest) {
         });
 
   if (!verify.valid) {
+    const isPending =
+      verify.error?.includes("not found on-chain") ||
+      verify.error?.includes("try again");
     return NextResponse.json(
       {
         error: verify.error || "Transaction verification failed",
+        pending: isPending,
         expectedAmount,
         actualAmount: verify.actualAmount,
       },
-      { status: 400 }
+      { status: isPending ? 202 : 400 }
     );
   }
 
-  // Create confirmed order
   const cleanedChannelName =
     typeof desiredChannelName === "string"
       ? desiredChannelName.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 30)
@@ -154,26 +162,27 @@ export async function POST(req: NextRequest) {
     userEmail: user.email,
     userName: user.name || "Unknown",
     plan,
+    months,
     amount: expectedAmount,
     currency,
     txHash: signature,
     status: "confirmed",
     desiredChannelName: cleanedChannelName || undefined,
-    originalPriceUsd: validPlan.price,
+    originalPriceUsd: totals.subtotal,
+    cycleDiscountPct: totals.cycleDiscountPct,
     discountPct,
-    discountedPriceUsd,
+    discountedPriceUsd: totals.finalUsd,
     walletAddress,
     budjuBalanceAtPayment: budjuBalance,
     createdAt: new Date(),
     updatedAt: new Date(),
   });
 
-  // Notify admin
   try {
     await sendAdminNewOrderEmail({
       userEmail: user.email,
       userName: user.name || "Unknown",
-      plan: validPlan.name,
+      plan: `${validPlan.name} (${months}mo)`,
       amount: expectedAmount,
       currency,
       txHash: signature,
@@ -186,8 +195,10 @@ export async function POST(req: NextRequest) {
     {
       orderId: result.insertedId,
       status: "confirmed",
+      months,
       discountPct,
-      finalPriceUsd: discountedPriceUsd,
+      cycleDiscountPct: totals.cycleDiscountPct,
+      finalPriceUsd: totals.finalUsd,
     },
     { status: 201 }
   );

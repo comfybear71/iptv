@@ -2,16 +2,25 @@
 
 import { useSession, signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import PlanCard from "@/components/PlanCard";
 import { PLANS, Plan } from "@/types";
 
 export default function HomePage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
+
+  // Logged-in users go straight to their dashboard panel —
+  // the homepage is for unauthenticated visitors only.
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.replace("/dashboard/plans");
+    }
+  }, [status, router]);
 
   const handleSelect = (plan: Plan) => {
     if (session) {
-      router.push(`/subscribe?plan=${plan.id}`);
+      router.push(`/dashboard/order?plan=${plan.id}`);
     } else {
       signIn("google");
     }

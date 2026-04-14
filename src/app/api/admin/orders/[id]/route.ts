@@ -104,7 +104,9 @@ export async function PATCH(
     const planInfo = PLANS.find((p) => p.id === order.plan);
     const now = new Date();
     const endDate = new Date(now);
-    endDate.setMonth(endDate.getMonth() + 1);
+    // Honor the order's billing duration (defaults to 1 month for legacy orders)
+    const months = typeof order.months === "number" && order.months > 0 ? order.months : 1;
+    endDate.setMonth(endDate.getMonth() + months);
 
     await db.collection("subscriptions").updateOne(
       { orderId: params.id },

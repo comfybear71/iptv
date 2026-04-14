@@ -3,20 +3,24 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/mongodb";
 import { sendAdminNewOrderEmail } from "@/lib/email";
-import { PLANS, PlanType } from "@/types";
+import { PLANS, PlanType, computeOrderTotalUsd } from "@/types";
 
 // POST: Pay for a plan using the user's stored crypto balance.
-// Body: { plan: PlanType, currency: "SOL" | "BUDJU" }
+// Body: { plan: PlanType, months?: 1|3|6|12, currency: "SOL" | "BUDJU" }
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { plan, currency } = await req.json();
+  const body = await req.json();
+  const { plan, currency, months: rawMonths } = body;
   if (!["SOL", "BUDJU"].includes(currency)) {
     return NextResponse.json({ error: "Invalid currency" }, { status: 400 });
   }
+  const months = [1, 3, 6, 12].includes(Number(rawMonths))
+    ? Number(rawMonths)
+    : 1;
 
   const validPlan = PLANS.find((p) => p.id === plan as PlanType);
   if (!validPlan) {
@@ -47,7 +51,14 @@ export async function POST(req: NextRequest) {
   }
   const budjuRate = parseFloat(process.env.BUDJU_USD_RATE || "0.01");
 
-  // Compute required amount
+  // Total = monthlyPrice × months × (1 − cycleDiscount)
+  // (No BUDJU holder discount for balance pay — that requires a paying wallet.)
+  const totals = computeOrderTotalUsd({
+    monthlyPrice: validPlan.price,
+    months,
+    budjuDiscountPct: 0,
+  });
+
   let amount: number;
   if (currency === "SOL") {
     if (!solPrice) {
@@ -56,9 +67,9 @@ export async function POST(req: NextRequest) {
         { status: 503 }
       );
     }
-    amount = parseFloat((validPlan.price / solPrice).toFixed(4));
+    amount = parseFloat((totals.finalUsd / solPrice).toFixed(4));
   } else {
-    amount = parseFloat((validPlan.price / budjuRate).toFixed(2));
+    amount = parseFloat((totals.finalUsd / budjuRate).toFixed(2));
   }
 
   const currentSOL = user.balanceSOL || 0;
@@ -91,11 +102,15 @@ export async function POST(req: NextRequest) {
     userEmail: user.email,
     userName: user.name || "Unknown",
     plan,
+    months,
     amount,
     currency: "BALANCE",
     txHash: `BALANCE-${currency}-${Date.now()}`,
     status: "confirmed",
-    notes: `Paid from ${currency} balance (${amount} ${currency})`,
+    notes: `Paid from ${currency} balance (${amount} ${currency}) — ${months} months`,
+    originalPriceUsd: totals.subtotal,
+    cycleDiscountPct: totals.cycleDiscountPct,
+    discountedPriceUsd: totals.finalUsd,
     createdAt: new Date(),
     updatedAt: new Date(),
   });
