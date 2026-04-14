@@ -3,12 +3,14 @@ import { getConnection } from "@/lib/solana";
 
 // GET /api/solana/blockhash
 // Returns a recent blockhash from the server-side Helius RPC.
-// Used by the subscribe page to bypass any browser RPC restrictions.
+// Uses "finalized" commitment so the blockhash is universally propagated
+// across RPC nodes — prevents "Blockhash not found" errors during
+// preflight simulation on send.
 export async function GET() {
   try {
     const connection = getConnection();
     const { blockhash, lastValidBlockHeight } =
-      await connection.getLatestBlockhash("confirmed");
+      await connection.getLatestBlockhash("finalized");
     return NextResponse.json({ blockhash, lastValidBlockHeight });
   } catch (err: any) {
     return NextResponse.json(

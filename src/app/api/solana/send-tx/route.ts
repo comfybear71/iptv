@@ -19,10 +19,13 @@ export async function POST(req: NextRequest) {
     const rawTx = Buffer.from(signedTx, "base64");
     const connection = getConnection();
 
+    // Skip preflight simulation to avoid "Blockhash not found" errors
+    // from RPC node propagation lag (the blockhash is valid, but the
+    // simulation node may not have seen it yet). The actual validators
+    // will still check everything when the tx is included in a block.
     const signature = await connection.sendRawTransaction(rawTx, {
-      skipPreflight: false,
-      preflightCommitment: "confirmed",
-      maxRetries: 3,
+      skipPreflight: true,
+      maxRetries: 5,
     });
 
     // Best-effort confirmation; if this fails, the signature is still
