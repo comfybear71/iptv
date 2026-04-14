@@ -23,6 +23,7 @@ export interface Order {
   userEmail: string;
   userName: string;
   plan: PlanType;
+  months: number; // billing duration in months (1, 3, 6, or 12)
   amount: number;
   currency: "SOL" | "BUDJU" | "BALANCE";
   txHash: string;
@@ -32,6 +33,7 @@ export interface Order {
   desiredChannelName?: string;
   // Discount tracking
   originalPriceUsd?: number;
+  cycleDiscountPct?: number;
   discountPct?: number;
   discountedPriceUsd?: number;
   walletAddress?: string;
@@ -152,4 +154,51 @@ export function getDiscountPct(budjuBalance: number): number {
 export function applyDiscount(price: number, discountPct: number): number {
   if (discountPct <= 0) return price;
   return Math.round(price * (100 - discountPct)) / 100;
+}
+
+// Multi-month billing — discounts apply per cycle length.
+export const BILLING_CYCLES: {
+  months: number;
+  discountPct: number;
+  label: string;
+}[] = [
+  { months: 1, discountPct: 0, label: "1 Month" },
+  { months: 3, discountPct: 10, label: "3 Months — 10% OFF" },
+  { months: 6, discountPct: 20, label: "6 Months — 20% OFF" },
+  { months: 12, discountPct: 35, label: "12 Months — BEST 35% OFF" },
+];
+
+export function getCycleDiscount(months: number): number {
+  const cycle = BILLING_CYCLES.find((c) => c.months === months);
+  return cycle?.discountPct || 0;
+}
+
+/**
+ * Final price math for the order:
+ *   subtotal       = plan.price * months
+ *   afterCycle     = subtotal × (1 − cycleDiscountPct)        (multi-month bonus)
+ *   final          = afterCycle × (1 − budjuDiscountPct)      (BUDJU holder bonus)
+ * Discounts STACK — long commits + BUDJU holding both reward the customer.
+ */
+export function computeOrderTotalUsd(params: {
+  monthlyPrice: number;
+  months: number;
+  budjuDiscountPct: number;
+}): {
+  subtotal: number;
+  cycleDiscountPct: number;
+  budjuDiscountPct: number;
+  finalUsd: number;
+} {
+  const subtotal =
+    Math.round(params.monthlyPrice * params.months * 100) / 100;
+  const cyclePct = getCycleDiscount(params.months);
+  const afterCycle = applyDiscount(subtotal, cyclePct);
+  const finalUsd = applyDiscount(afterCycle, params.budjuDiscountPct);
+  return {
+    subtotal,
+    cycleDiscountPct: cyclePct,
+    budjuDiscountPct: params.budjuDiscountPct,
+    finalUsd,
+  };
 }
