@@ -28,8 +28,33 @@ export default function HomePage() {
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-400">
           Thousands of live channels, movies, and shows. Crystal-clear HD &amp;
-          4K streaming. Pay with crypto — SOL or BUDJU.
+          4K streaming. Pay with crypto — SOL or BUDJU through your Phantom
+          wallet.
         </p>
+
+        {!session && (
+          <div className="mx-auto mt-8 max-w-xl rounded-xl border border-blue-800 bg-blue-900/20 p-5 text-left">
+            <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-blue-300">
+              How it works
+            </h2>
+            <ol className="mt-3 space-y-2 text-sm text-slate-300">
+              <li>
+                <span className="font-semibold text-white">1.</span> Sign in
+                with Google (use Safari or Chrome — not Phantom&apos;s in-app
+                browser)
+              </li>
+              <li>
+                <span className="font-semibold text-white">2.</span> Pick a
+                plan and connect your Phantom wallet
+              </li>
+              <li>
+                <span className="font-semibold text-white">3.</span> Sign the
+                payment — you&apos;re streaming within minutes
+              </li>
+            </ol>
+          </div>
+        )}
+
         <div className="mt-8 flex items-center justify-center gap-4">
           {session ? (
             <button

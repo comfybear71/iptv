@@ -3,7 +3,13 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import AdminGuard from "@/components/AdminGuard";
-import { PLANS } from "@/types";
+import { PLANS, SubscriptionCredentials } from "@/types";
+import {
+  buildMyBunnyM3uUrls,
+  COLLECTION_SIZES,
+  CollectionSize,
+  DEFAULT_XTREME_HOST,
+} from "@/lib/mybunny";
 
 interface SubData {
   _id: string;
@@ -14,7 +20,7 @@ interface SubData {
   status: string;
   startDate: string;
   endDate: string;
-  credentials?: { m3uUrl: string; username: string; password: string };
+  credentials?: SubscriptionCredentials;
   orderId: string;
   notes?: string;
   lastRenewedAt?: string;
@@ -28,9 +34,11 @@ export default function AdminSubscriptionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
-  const [m3uUrl, setM3uUrl] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [xtremeHost, setXtremeHost] = useState(DEFAULT_XTREME_HOST);
+  const [xtremeUsername, setXtremeUsername] = useState("");
+  const [xtremePassword, setXtremePassword] = useState("");
+  const [collectionSize, setCollectionSize] = useState<CollectionSize>(2);
+  const [channelName, setChannelName] = useState("");
   const [notes, setNotes] = useState("");
 
   const load = async () => {
@@ -38,9 +46,12 @@ export default function AdminSubscriptionDetailPage() {
     const data = await res.json();
     if (data.subscription) {
       setSub(data.subscription);
-      setM3uUrl(data.subscription.credentials?.m3uUrl || "");
-      setUsername(data.subscription.credentials?.username || "");
-      setPassword(data.subscription.credentials?.password || "");
+      const c: SubscriptionCredentials = data.subscription.credentials || {};
+      setXtremeHost(c.xtremeHost || DEFAULT_XTREME_HOST);
+      setXtremeUsername(c.xtremeUsername || "");
+      setXtremePassword(c.xtremePassword || "");
+      setCollectionSize((c.collectionSize as CollectionSize) || 2);
+      setChannelName(c.channelName || "");
       setNotes(data.subscription.notes || "");
     }
     setLoading(false);
@@ -67,11 +78,17 @@ export default function AdminSubscriptionDetailPage() {
     setTimeout(() => setMsg(""), 3000);
   };
 
-  const saveCredentials = () =>
-    patch(
-      { credentials: { m3uUrl, username, password } },
-      "Credentials updated"
-    );
+  const saveCredentials = () => {
+    const credentials: SubscriptionCredentials = {
+      xtremeHost: xtremeHost.trim() || DEFAULT_XTREME_HOST,
+      xtremeUsername: xtremeUsername.trim(),
+      xtremePassword: xtremePassword.trim(),
+      collectionSize,
+      channelName: channelName.trim(),
+    };
+    patch({ credentials }, "Credentials updated");
+  };
+
   const extendBy = (months: number) =>
     patch({ extendMonths: months }, `Extended by ${months} month(s)`);
   const cancel = () => patch({ status: "cancelled" }, "Subscription cancelled");
@@ -93,6 +110,15 @@ export default function AdminSubscriptionDetailPage() {
     }
     setTimeout(() => setMsg(""), 3000);
   };
+
+  const previewUrls = buildMyBunnyM3uUrls(
+    xtremeHost,
+    xtremeUsername,
+    xtremePassword,
+    collectionSize
+  );
+
+  const hasCreds = !!(xtremeUsername && xtremePassword);
 
   return (
     <AdminGuard>
@@ -123,10 +149,7 @@ export default function AdminSubscriptionDetailPage() {
             {/* Summary */}
             <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/50 p-6">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field
-                  label="Customer"
-                  value={sub.userEmail}
-                />
+                <Field label="Customer" value={sub.userEmail} />
                 <Field
                   label="Plan"
                   value={
@@ -161,10 +184,7 @@ export default function AdminSubscriptionDetailPage() {
                   label="End"
                   value={new Date(sub.endDate).toLocaleDateString()}
                 />
-                <Field
-                  label="Order ID"
-                  value={sub.orderId}
-                />
+                <Field label="Order ID" value={sub.orderId} />
                 {sub.lastRenewedAt && (
                   <Field
                     label="Last renewed"
@@ -231,37 +251,108 @@ export default function AdminSubscriptionDetailPage() {
 
             {/* Credentials */}
             <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/50 p-6">
-              <h3 className="text-sm font-semibold text-white">Credentials</h3>
-              <div className="mt-3 space-y-3">
+              <h3 className="text-sm font-semibold text-white">
+                MyBunny.TV Credentials
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Only Xtreme host, username, and password are needed. All M3U
+                URLs and web player links are computed from these.
+              </p>
+
+              <div className="mt-4 space-y-3">
                 <div>
-                  <label className="text-xs text-slate-400">M3U URL</label>
+                  <label className="text-xs text-slate-400">Host</label>
                   <input
                     type="text"
-                    value={m3uUrl}
-                    onChange={(e) => setM3uUrl(e.target.value)}
+                    value={xtremeHost}
+                    onChange={(e) => setXtremeHost(e.target.value)}
                     className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
                   />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="text-xs text-slate-400">Username</label>
+                    <label className="text-xs text-slate-400">
+                      Xtreme Username
+                    </label>
                     <input
                       type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                      value={xtremeUsername}
+                      onChange={(e) => setXtremeUsername(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-sm text-white"
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-400">Password</label>
+                    <label className="text-xs text-slate-400">
+                      Xtreme Password
+                    </label>
                     <input
                       type="text"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      value={xtremePassword}
+                      onChange={(e) => setXtremePassword(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-sm text-white"
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="text-xs text-slate-400">
+                      VOD Size
+                    </label>
+                    <select
+                      value={collectionSize}
+                      onChange={(e) =>
+                        setCollectionSize(
+                          Number(e.target.value) as CollectionSize
+                        )
+                      }
+                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                    >
+                      {COLLECTION_SIZES.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.label} — {s.description}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400">
+                      Channel name
+                    </label>
+                    <input
+                      type="text"
+                      value={channelName}
+                      onChange={(e) => setChannelName(e.target.value)}
                       className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
                     />
                   </div>
                 </div>
+
+                {hasCreds && (
+                  <div className="mt-2 rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Preview
+                    </p>
+                    <div className="mt-2 space-y-1 font-mono text-[11px] text-slate-400">
+                      <div className="truncate">
+                        <span className="text-orange-400">Hot:</span>{" "}
+                        {previewUrls.hotChannels}
+                      </div>
+                      <div className="truncate">
+                        <span className="text-blue-400">Live:</span>{" "}
+                        {previewUrls.liveTV}
+                      </div>
+                      <div className="truncate">
+                        <span className="text-red-400">Movies:</span>{" "}
+                        {previewUrls.movies}
+                      </div>
+                      <div className="truncate">
+                        <span className="text-cyan-400">Series:</span>{" "}
+                        {previewUrls.series}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-2">
                   <button
                     onClick={saveCredentials}
@@ -269,7 +360,7 @@ export default function AdminSubscriptionDetailPage() {
                   >
                     Save Credentials
                   </button>
-                  {sub.credentials && (
+                  {hasCreds && (
                     <button
                       onClick={resendEmail}
                       className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-600"

@@ -4,6 +4,12 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import AdminGuard from "@/components/AdminGuard";
 import { PLANS } from "@/types";
+import {
+  buildMyBunnyM3uUrls,
+  COLLECTION_SIZES,
+  CollectionSize,
+  DEFAULT_XTREME_HOST,
+} from "@/lib/mybunny";
 
 interface OrderData {
   _id: string;
@@ -15,6 +21,12 @@ interface OrderData {
   currency: string;
   txHash: string;
   status: string;
+  desiredChannelName?: string;
+  discountPct?: number;
+  originalPriceUsd?: number;
+  discountedPriceUsd?: number;
+  walletAddress?: string;
+  budjuBalanceAtPayment?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -24,17 +36,24 @@ export default function AdminOrderDetailPage() {
   const router = useRouter();
   const [order, setOrder] = useState<OrderData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [m3uUrl, setM3uUrl] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  const [xtremeHost, setXtremeHost] = useState(DEFAULT_XTREME_HOST);
+  const [xtremeUsername, setXtremeUsername] = useState("");
+  const [xtremePassword, setXtremePassword] = useState("");
+  const [collectionSize, setCollectionSize] = useState<CollectionSize>(2);
+  const [channelName, setChannelName] = useState("");
 
   useEffect(() => {
     fetch(`/api/admin/orders/${params.id}`)
       .then((r) => r.json())
       .then((data) => {
         setOrder(data.order || null);
+        if (data.order?.desiredChannelName) {
+          setChannelName(data.order.desiredChannelName);
+        }
         setLoading(false);
       });
   }, [params.id]);
@@ -49,20 +68,47 @@ export default function AdminOrderDetailPage() {
   };
 
   const handleProvision = async () => {
-    if (!m3uUrl || !username || !password) return;
+    if (!xtremeUsername || !xtremePassword) {
+      setError("Xtreme username and password are required.");
+      return;
+    }
     setSaving(true);
-    await fetch(`/api/admin/orders/${params.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        status: "provisioned",
-        credentials: { m3uUrl, username, password },
-      }),
-    });
-    setOrder((prev) => (prev ? { ...prev, status: "provisioned" } : null));
-    setSaved(true);
-    setSaving(false);
+    setError("");
+    try {
+      const credentials = {
+        xtremeHost: xtremeHost.trim() || DEFAULT_XTREME_HOST,
+        xtremeUsername: xtremeUsername.trim(),
+        xtremePassword: xtremePassword.trim(),
+        collectionSize,
+        channelName: channelName.trim(),
+      };
+      const res = await fetch(`/api/admin/orders/${params.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "provisioned",
+          credentials,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || "Failed to provision");
+      }
+      setOrder((prev) => (prev ? { ...prev, status: "provisioned" } : null));
+      setSaved(true);
+    } catch (err: any) {
+      setError(err?.message || "Failed");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const previewUrls = buildMyBunnyM3uUrls(
+    xtremeHost,
+    xtremeUsername,
+    xtremePassword,
+    collectionSize
+  );
 
   return (
     <AdminGuard>
@@ -119,8 +165,50 @@ export default function AdminOrderDetailPage() {
                   </div>
                 </div>
               </div>
+
+              {order.desiredChannelName && (
+                <div className="mt-4 rounded-lg border border-blue-800 bg-blue-900/20 p-3">
+                  <p className="text-xs uppercase tracking-wide text-blue-400">
+                    Customer&apos;s Requested Channel Name
+                  </p>
+                  <p className="mt-1 font-mono text-sm text-white">
+                    {order.desiredChannelName}
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Use this as the Xtreme username in MyBunny.TV if available.
+                  </p>
+                </div>
+              )}
+
+              {order.discountPct !== undefined && order.discountPct > 0 && (
+                <div className="mt-4 rounded-lg border border-green-800 bg-green-900/20 p-3">
+                  <p className="text-xs uppercase tracking-wide text-green-400">
+                    BUDJU Holder Discount Applied
+                  </p>
+                  <p className="mt-1 text-sm text-white">
+                    {order.discountPct}% off — was $
+                    {order.originalPriceUsd?.toFixed(2)}, paid $
+                    {order.discountedPriceUsd?.toFixed(2)}
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    BUDJU at payment:{" "}
+                    {order.budjuBalanceAtPayment?.toLocaleString()}
+                  </p>
+                </div>
+              )}
+
+              {order.walletAddress && (
+                <div className="mt-4">
+                  <span className="text-xs text-slate-500">Payer Wallet</span>
+                  <div className="mt-1 break-all rounded bg-slate-800 px-3 py-2 font-mono text-xs text-slate-300">
+                    {order.walletAddress}
+                  </div>
+                </div>
+              )}
               <div className="mt-4">
-                <span className="text-xs text-slate-500">Transaction Hash</span>
+                <span className="text-xs text-slate-500">
+                  Transaction Hash
+                </span>
                 <div className="mt-1 break-all rounded bg-slate-800 px-3 py-2 font-mono text-xs text-slate-300">
                   {order.txHash}
                 </div>
@@ -142,52 +230,132 @@ export default function AdminOrderDetailPage() {
                 !saved && (
                   <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
                     <h3 className="font-semibold text-white">
-                      Provision Credentials
+                      Provision MyBunny.TV Credentials
                     </h3>
-                    <p className="mt-1 text-sm text-slate-400">
-                      Enter the streaming credentials to send to the customer.
-                    </p>
-                    <div className="mt-4 space-y-3">
+                    <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-slate-400">
+                      <li>
+                        In MyBunny.TV, create a plan for this customer
+                      </li>
+                      <li>
+                        Copy the generated username + password from MyBunny
+                      </li>
+                      <li>
+                        Paste below — the rest (M3U URLs, web player) is
+                        computed automatically
+                      </li>
+                    </ol>
+
+                    <div className="mt-5 space-y-3">
                       <div>
-                        <label className="text-sm text-slate-300">
-                          M3U URL
+                        <label className="text-xs text-slate-400">
+                          Host
                         </label>
                         <input
                           type="text"
-                          value={m3uUrl}
-                          onChange={(e) => setM3uUrl(e.target.value)}
-                          placeholder="http://..."
-                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+                          value={xtremeHost}
+                          onChange={(e) => setXtremeHost(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
                         />
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <div>
-                          <label className="text-sm text-slate-300">
-                            Username
+                          <label className="text-xs text-slate-400">
+                            Xtreme Username *
                           </label>
                           <input
                             type="text"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+                            value={xtremeUsername}
+                            onChange={(e) =>
+                              setXtremeUsername(e.target.value)
+                            }
+                            placeholder="e.g. ggvzegxc"
+                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-sm text-white"
                           />
                         </div>
                         <div>
-                          <label className="text-sm text-slate-300">
-                            Password
+                          <label className="text-xs text-slate-400">
+                            Xtreme Password *
                           </label>
                           <input
                             type="text"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+                            value={xtremePassword}
+                            onChange={(e) =>
+                              setXtremePassword(e.target.value)
+                            }
+                            placeholder="e.g. XGTMyuzffFKC"
+                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-sm text-white"
                           />
                         </div>
                       </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="text-xs text-slate-400">
+                            VOD Collection Size
+                          </label>
+                          <select
+                            value={collectionSize}
+                            onChange={(e) =>
+                              setCollectionSize(
+                                Number(e.target.value) as CollectionSize
+                              )
+                            }
+                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                          >
+                            {COLLECTION_SIZES.map((s) => (
+                              <option key={s.value} value={s.value}>
+                                {s.label} — {s.description}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-400">
+                            Channel name (display)
+                          </label>
+                          <input
+                            type="text"
+                            value={channelName}
+                            onChange={(e) => setChannelName(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Live preview */}
+                      {xtremeUsername && xtremePassword && (
+                        <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Preview — URLs the customer will see
+                          </p>
+                          <div className="mt-2 space-y-1 font-mono text-[11px] text-slate-400">
+                            <div className="truncate">
+                              <span className="text-orange-400">Hot:</span>{" "}
+                              {previewUrls.hotChannels}
+                            </div>
+                            <div className="truncate">
+                              <span className="text-blue-400">Live:</span>{" "}
+                              {previewUrls.liveTV}
+                            </div>
+                            <div className="truncate">
+                              <span className="text-red-400">Movies:</span>{" "}
+                              {previewUrls.movies}
+                            </div>
+                            <div className="truncate">
+                              <span className="text-cyan-400">Series:</span>{" "}
+                              {previewUrls.series}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {error && (
+                        <p className="text-sm text-red-400">{error}</p>
+                      )}
+
                       <button
                         onClick={handleProvision}
-                        disabled={!m3uUrl || !username || !password || saving}
-                        className="rounded-lg bg-green-600 px-6 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
+                        disabled={saving}
+                        className="w-full rounded-lg bg-green-600 py-2.5 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50"
                       >
                         {saving
                           ? "Provisioning..."

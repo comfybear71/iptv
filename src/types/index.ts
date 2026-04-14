@@ -28,6 +28,8 @@ export interface Order {
   txHash: string;
   status: "pending" | "confirmed" | "provisioned" | "cancelled";
   notes?: string;
+  // Customer preferences captured at checkout
+  desiredChannelName?: string;
   // Discount tracking
   originalPriceUsd?: number;
   discountPct?: number;
@@ -36,6 +38,17 @@ export interface Order {
   budjuBalanceAtPayment?: number;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface SubscriptionCredentials {
+  // Xtreme API — primary credentials from MyBunny.TV
+  xtremeHost?: string;      // e.g. https://mybunny.tv
+  xtremeUsername?: string;
+  xtremePassword?: string;
+  // Collection size for Movies/Series M3U URLs (1=Compact, 2=Standard, 3=Extensive, 4=Complete)
+  collectionSize?: 1 | 2 | 3 | 4;
+  // User preferences
+  channelName?: string; // custom name chosen by customer
 }
 
 export interface Subscription {
@@ -47,11 +60,7 @@ export interface Subscription {
   status: "active" | "expired" | "cancelled";
   startDate: Date;
   endDate: Date;
-  credentials?: {
-    m3uUrl: string;
-    username: string;
-    password: string;
-  };
+  credentials?: SubscriptionCredentials;
   orderId: string;
   createdAt: Date;
   lastRenewedAt?: Date;
