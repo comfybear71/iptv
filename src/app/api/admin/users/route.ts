@@ -30,6 +30,9 @@ export async function GET() {
   const usersWithSubs = users.map((u) => ({
     ...u,
     activeSubscriptions: subMap[u._id.toString()] || 0,
+    balanceSOL: u.balanceSOL || 0,
+    balanceBUDJU: u.balanceBUDJU || 0,
+    disabled: u.disabled || false,
   }));
 
   return NextResponse.json({ users: usersWithSubs });

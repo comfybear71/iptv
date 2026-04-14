@@ -13,7 +13,7 @@ function SubscribeContent() {
 
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<
-    "SOL" | "BUDJU" | "AIGLITCH" | null
+    "SOL" | "BUDJU" | "BALANCE" | null
   >(null);
   const [solPrice, setSolPrice] = useState<number | null>(null);
   const [budjuRate, setBudjuRate] = useState<number>(0.01);
@@ -21,6 +21,11 @@ function SubscribeContent() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
+  const [balanceSOL, setBalanceSOL] = useState(0);
+  const [balanceBUDJU, setBalanceBUDJU] = useState(0);
+  const [balanceCurrency, setBalanceCurrency] =
+    useState<"SOL" | "BUDJU">("SOL");
+  const [showOnRamp, setShowOnRamp] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -43,10 +48,20 @@ function SubscribeContent() {
         setSolPrice(data.solPrice);
         setBudjuRate(data.budjuRate);
       });
+    fetch("/api/me")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.user) {
+          setBalanceSOL(data.user.balanceSOL || 0);
+          setBalanceBUDJU(data.user.balanceBUDJU || 0);
+        }
+      });
   }, []);
 
-  const solWallet = process.env.NEXT_PUBLIC_SOL_WALLET_ADDRESS || "SOL_WALLET_NOT_SET";
-  const budjuWallet = process.env.NEXT_PUBLIC_BUDJU_WALLET_ADDRESS || "BUDJU_WALLET_NOT_SET";
+  const solWallet =
+    process.env.NEXT_PUBLIC_SOL_WALLET_ADDRESS || "SOL_WALLET_NOT_SET";
+  const budjuWallet =
+    process.env.NEXT_PUBLIC_BUDJU_WALLET_ADDRESS || "BUDJU_WALLET_NOT_SET";
 
   const solAmount =
     selectedPlan && solPrice
@@ -57,13 +72,19 @@ function SubscribeContent() {
       ? (selectedPlan.price / budjuRate).toFixed(2)
       : null;
 
+  const solRequired = parseFloat(solAmount || "0");
+  const budjuRequired = parseFloat(budjuAmount || "0");
+  const canPaySOL = balanceSOL >= solRequired && solRequired > 0;
+  const canPayBUDJU = balanceBUDJU >= budjuRequired && budjuRequired > 0;
+  const hasBalance = canPaySOL || canPayBUDJU;
+
   const handleSubmitOrder = async () => {
     if (!selectedPlan || !paymentMethod || !txHash.trim()) return;
     setSubmitting(true);
     setError("");
 
     try {
-      const currency = paymentMethod === "AIGLITCH" ? "BUDJU" : paymentMethod;
+      const currency = paymentMethod;
       const amount =
         currency === "SOL"
           ? parseFloat(solAmount || "0")
@@ -93,6 +114,31 @@ function SubscribeContent() {
     }
   };
 
+  const handlePayFromBalance = async () => {
+    if (!selectedPlan) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const res = await fetch("/api/orders/balance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan: selectedPlan.id,
+          currency: balanceCurrency,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed");
+      }
+      setSubmitted(true);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   if (status === "loading") {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
@@ -107,15 +153,25 @@ function SubscribeContent() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <div className="rounded-xl border border-green-800 bg-green-900/20 p-8">
-          <svg className="mx-auto h-12 w-12 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          <svg
+            className="mx-auto h-12 w-12 text-green-500"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M5 13l4 4L19 7"
+            />
           </svg>
           <h2 className="mt-4 text-xl font-bold text-white">
             Order Submitted!
           </h2>
           <p className="mt-2 text-slate-400">
-            Your order is pending confirmation. We&apos;ll verify your payment
-            and email you your streaming credentials once provisioned.
+            Your order is being processed. We&apos;ll email you streaming
+            credentials once provisioned.
           </p>
           <button
             onClick={() => router.push("/dashboard")}
@@ -131,6 +187,23 @@ function SubscribeContent() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
       <h1 className="text-2xl font-bold text-white">Subscribe</h1>
+
+      {/* Balance banner */}
+      {(balanceSOL > 0 || balanceBUDJU > 0) && (
+        <div className="mt-4 rounded-xl border border-blue-800 bg-blue-900/20 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-blue-400">
+                Your ComfyTV Balance
+              </p>
+              <p className="mt-1 text-sm text-white">
+                {balanceSOL.toFixed(4)} SOL &nbsp;|&nbsp;{" "}
+                {balanceBUDJU.toFixed(2)} BUDJU
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Step 1: Pick plan */}
       <div className="mt-8">
@@ -173,7 +246,34 @@ function SubscribeContent() {
           <h2 className="text-lg font-semibold text-white">
             Step 2: Choose Payment Method
           </h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+
+          {/* Pay from balance option */}
+          {hasBalance && (
+            <button
+              onClick={() => setPaymentMethod("BALANCE")}
+              className={`mt-4 w-full rounded-xl border p-4 text-left transition ${
+                paymentMethod === "BALANCE"
+                  ? "border-green-500 bg-green-900/20"
+                  : "border-green-800 bg-green-900/10 hover:border-green-700"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-green-400">
+                    Pay from ComfyTV Balance (instant)
+                  </div>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {canPaySOL && `${solRequired} SOL available`}
+                    {canPaySOL && canPayBUDJU && " | "}
+                    {canPayBUDJU && `${budjuRequired} BUDJU available`}
+                  </p>
+                </div>
+                <span className="text-2xl">⚡</span>
+              </div>
+            </button>
+          )}
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <button
               onClick={() => setPaymentMethod("SOL")}
               className={`rounded-xl border p-4 text-left transition ${
@@ -202,51 +302,122 @@ function SubscribeContent() {
                 1 BUDJU = ${budjuRate}
               </p>
             </button>
+          </div>
+
+          {/* Need BUDJU? Link to our own swap */}
+          <div className="mt-4">
             <button
-              onClick={() => setPaymentMethod("AIGLITCH")}
-              className={`rounded-xl border p-4 text-left transition ${
-                paymentMethod === "AIGLITCH"
-                  ? "border-blue-500 bg-blue-900/20"
-                  : "border-slate-800 bg-slate-900/50 hover:border-slate-700"
-              }`}
+              onClick={() => setShowOnRamp(!showOnRamp)}
+              className="text-sm text-blue-400 hover:text-blue-300"
             >
-              <div className="font-semibold text-white">AIGlitch</div>
-              <p className="mt-1 text-xs text-slate-400">
-                Buy BUDJU via AIGlitch
-              </p>
+              {showOnRamp ? "▾" : "▸"} Need BUDJU? Swap on budju.xyz
+            </button>
+            {showOnRamp && (
+              <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+                <h4 className="text-sm font-semibold text-white">
+                  Get BUDJU
+                </h4>
+                <p className="mt-1 text-xs text-slate-400">
+                  Swap SOL for BUDJU on our own swap at budju.xyz, then send
+                  BUDJU to the wallet below.
+                </p>
+                <a
+                  href="https://www.budju.xyz/swap"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block rounded-lg bg-purple-600 px-3 py-1.5 text-xs text-white hover:bg-purple-500"
+                >
+                  Swap on budju.xyz
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: Pay from balance */}
+      {selectedPlan && paymentMethod === "BALANCE" && (
+        <div className="mt-8">
+          <h2 className="text-lg font-semibold text-white">
+            Step 3: Confirm Balance Payment
+          </h2>
+          <div className="mt-4 rounded-xl border border-green-800 bg-green-900/10 p-6">
+            {canPaySOL && canPayBUDJU && (
+              <div className="mb-4">
+                <label className="text-sm text-slate-300">
+                  Pay with which currency?
+                </label>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={() => setBalanceCurrency("SOL")}
+                    className={`rounded-lg px-4 py-1.5 text-sm ${
+                      balanceCurrency === "SOL"
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-800 text-slate-300"
+                    }`}
+                  >
+                    SOL ({solRequired})
+                  </button>
+                  <button
+                    onClick={() => setBalanceCurrency("BUDJU")}
+                    className={`rounded-lg px-4 py-1.5 text-sm ${
+                      balanceCurrency === "BUDJU"
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-800 text-slate-300"
+                    }`}
+                  >
+                    BUDJU ({budjuRequired})
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <p className="text-sm text-slate-300">
+              You&apos;re paying{" "}
+              <span className="font-bold text-white">
+                {balanceCurrency === "SOL" ? solRequired : budjuRequired}{" "}
+                {balanceCurrency}
+              </span>{" "}
+              from your ComfyTV balance for the{" "}
+              <span className="font-bold text-white">{selectedPlan.name}</span>{" "}
+              plan (${selectedPlan.price.toFixed(2)} USD).
+            </p>
+
+            <p className="mt-3 text-xs text-slate-500">
+              After:{" "}
+              {(balanceCurrency === "SOL"
+                ? balanceSOL - solRequired
+                : balanceSOL
+              ).toFixed(4)}{" "}
+              SOL /{" "}
+              {(balanceCurrency === "BUDJU"
+                ? balanceBUDJU - budjuRequired
+                : balanceBUDJU
+              ).toFixed(2)}{" "}
+              BUDJU
+            </p>
+
+            {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+
+            <button
+              onClick={handlePayFromBalance}
+              disabled={submitting}
+              className="mt-4 w-full rounded-lg bg-green-600 py-2.5 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
+            >
+              {submitting
+                ? "Processing..."
+                : `Pay ${balanceCurrency === "SOL" ? solRequired : budjuRequired} ${balanceCurrency} from Balance`}
             </button>
           </div>
         </div>
       )}
 
-      {/* Step 3: Payment details */}
-      {selectedPlan && paymentMethod && (
+      {/* Step 3: Payment details (crypto send flow) */}
+      {selectedPlan && paymentMethod && paymentMethod !== "BALANCE" && (
         <div className="mt-8">
           <h2 className="text-lg font-semibold text-white">
             Step 3: Send Payment
           </h2>
-
-          {paymentMethod === "AIGLITCH" && (
-            <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/50 p-6">
-              <p className="text-sm text-slate-300">
-                Purchase BUDJU tokens on AIGlitch, then return here to complete
-                your payment.
-              </p>
-              <a
-                href="https://aiglitch.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-4 inline-block rounded-lg bg-purple-600 px-6 py-2 text-sm font-medium text-white hover:bg-purple-500"
-              >
-                Go to AIGlitch
-              </a>
-              <p className="mt-4 text-sm text-slate-400">
-                After purchasing BUDJU, send{" "}
-                <span className="font-mono text-white">{budjuAmount}</span>{" "}
-                BUDJU to the wallet below:
-              </p>
-            </div>
-          )}
 
           <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/50 p-6">
             <div className="text-center">
@@ -293,9 +464,7 @@ function SubscribeContent() {
               />
             </div>
 
-            {error && (
-              <p className="mt-3 text-sm text-red-400">{error}</p>
-            )}
+            {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
 
             <button
               onClick={handleSubmitOrder}

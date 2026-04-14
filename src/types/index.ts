@@ -7,6 +7,11 @@ export interface User {
   image?: string;
   role: "user" | "admin";
   createdAt: Date;
+  // Balance system
+  balanceSOL?: number;
+  balanceBUDJU?: number;
+  autoRenew?: boolean;
+  disabled?: boolean;
 }
 
 export interface Order {
@@ -16,9 +21,10 @@ export interface Order {
   userName: string;
   plan: PlanType;
   amount: number;
-  currency: "SOL" | "BUDJU";
+  currency: "SOL" | "BUDJU" | "BALANCE";
   txHash: string;
-  status: "pending" | "confirmed" | "provisioned";
+  status: "pending" | "confirmed" | "provisioned" | "cancelled";
+  notes?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,7 +35,7 @@ export interface Subscription {
   userEmail: string;
   plan: PlanType;
   connections: number;
-  status: "active" | "expired";
+  status: "active" | "expired" | "cancelled";
   startDate: Date;
   endDate: Date;
   credentials?: {
@@ -38,6 +44,25 @@ export interface Subscription {
     password: string;
   };
   orderId: string;
+  createdAt: Date;
+  // Optional audit fields
+  lastRenewedAt?: Date;
+  notes?: string;
+}
+
+export interface LedgerEntry {
+  _id?: ObjectId;
+  userId: string;
+  userEmail: string;
+  type: "credit" | "debit";
+  currency: "SOL" | "BUDJU";
+  amount: number;
+  reason: string;
+  adminEmail?: string; // who made the entry (if admin action)
+  orderId?: string;   // related order if any
+  subscriptionId?: string; // related subscription if any
+  balanceAfterSOL: number;
+  balanceAfterBUDJU: number;
   createdAt: Date;
 }
 
