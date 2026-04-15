@@ -45,6 +45,8 @@ export default function BrowseChannelsPage() {
   const [enabledCategoryIds, setEnabledCategoryIds] = useState<string[]>([]);
   const [prefsDirty, setPrefsDirty] = useState(false);
   const [savingPrefs, setSavingPrefs] = useState(false);
+  const [playlistUrl, setPlaylistUrl] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -71,6 +73,9 @@ export default function BrowseChannelsPage() {
         }
         if (Array.isArray(prefsData.enabledCategoryIds)) {
           setEnabledCategoryIds(prefsData.enabledCategoryIds);
+        }
+        if (typeof prefsData.playlistUrl === "string") {
+          setPlaylistUrl(prefsData.playlistUrl);
         }
       } finally {
         setSubsLoading(false);
@@ -145,14 +150,29 @@ export default function BrowseChannelsPage() {
   const savePrefs = async () => {
     setSavingPrefs(true);
     try {
-      await fetch("/api/me/channel-prefs", {
+      const res = await fetch("/api/me/channel-prefs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabledCategoryIds }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (typeof data.playlistUrl === "string") {
+        setPlaylistUrl(data.playlistUrl);
+      }
       setPrefsDirty(false);
     } finally {
       setSavingPrefs(false);
+    }
+  };
+
+  const copyPlaylistUrl = async () => {
+    if (!playlistUrl) return;
+    try {
+      await navigator.clipboard.writeText(playlistUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore
     }
   };
 
@@ -216,8 +236,8 @@ export default function BrowseChannelsPage() {
             />
             <QuickWatchCard
               icon="📡"
-              label="All Live TV"
-              sub="Full playlist"
+              label="Full Live TV"
+              sub="Every MyBunny channel (unfiltered)"
               color="bg-blue-600/20 text-blue-400"
               webUrl={buildWebPlayerUrl(m3uUrls.liveTV)}
             />
@@ -308,6 +328,62 @@ export default function BrowseChannelsPage() {
                 })}
               </div>
             )}
+          </section>
+
+          {/* My Playlist URL — built from saved categories */}
+          <section className="mt-6 rounded-2xl border border-emerald-800 bg-emerald-900/10 p-5">
+            <h2 className="text-sm font-semibold uppercase tracking-widest text-emerald-300">
+              My Playlist URL
+            </h2>
+            <p className="mt-1 text-xs text-slate-400">
+              {enabledCategoryIds.length === 0
+                ? "Currently includes every channel. Pick categories above to filter."
+                : `Only channels in your ${enabledCategoryIds.length} selected ${
+                    enabledCategoryIds.length === 1 ? "category" : "categories"
+                  }. Updates automatically when you save changes.`}
+              {prefsDirty && (
+                <>
+                  {" "}
+                  <strong className="text-amber-300">
+                    Save your selection first so the URL reflects it.
+                  </strong>
+                </>
+              )}
+            </p>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <a
+                href={buildWebPlayerUrl(playlistUrl)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`rounded-lg px-4 py-2 text-xs font-semibold text-white ${
+                  playlistUrl
+                    ? "bg-purple-600 hover:bg-purple-500"
+                    : "cursor-not-allowed bg-slate-800 opacity-50"
+                }`}
+                onClick={(e) => {
+                  if (!playlistUrl) e.preventDefault();
+                }}
+              >
+                ▶ Watch Filtered
+              </a>
+              <button
+                onClick={copyPlaylistUrl}
+                disabled={!playlistUrl}
+                className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+              >
+                {copied ? "✓ Copied" : "📋 Copy URL"}
+              </button>
+              <code className="min-w-0 flex-1 truncate rounded-md bg-slate-950 px-3 py-2 font-mono text-[11px] text-slate-400">
+                {playlistUrl || "(loading…)"}
+              </code>
+            </div>
+
+            <p className="mt-3 text-[11px] text-slate-500">
+              Paste this URL into TiviMate / IPTV Smarters / OTT Navigator as
+              an <strong>M3U playlist</strong>. It stays at the same URL even
+              if you change your category selection later.
+            </p>
           </section>
 
           {/* Search + Streams list */}
