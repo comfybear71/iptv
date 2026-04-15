@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   buildHotChannelsUrl,
   buildMyBunnyM3uUrls,
@@ -16,19 +16,13 @@ interface Subscription {
   credentials?: SubscriptionCredentials;
 }
 
-interface XtreamCategory {
-  category_id: string;
-  category_name: string;
-  parent_id: number;
-}
-
 interface XtreamStream {
   stream_id: number;
   name: string;
   stream_icon: string;
   category_id: string;
   epg_channel_id: string | null;
-  /** Direct playback URL straight from MyBunny's M3U — used AS-IS */
+  /** Direct playback URL from MyBunny's M3U — used AS-IS */
   url?: string;
 }
 
@@ -45,14 +39,8 @@ export default function BrowseChannelsPage() {
 
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [subsLoading, setSubsLoading] = useState(true);
-
-  const [categories, setCategories] = useState<XtreamCategory[]>([]);
-  const [enabledCategoryIds, setEnabledCategoryIds] = useState<string[]>([]);
-  const [prefsDirty, setPrefsDirty] = useState(false);
-  const [savingPrefs, setSavingPrefs] = useState(false);
   const [playlistUrl, setPlaylistUrl] = useState("");
   const [copied, setCopied] = useState(false);
-  const [categoriesExpanded, setCategoriesExpanded] = useState(false);
 
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -60,26 +48,17 @@ export default function BrowseChannelsPage() {
   const [streamsLoading, setStreamsLoading] = useState(false);
   const [streamsError, setStreamsError] = useState("");
 
-  // -- Load subscription + categories + saved prefs on mount --
+  // Initial load: subscription + personal M3U URL
   useEffect(() => {
     (async () => {
       try {
-        const [subsRes, catsRes, prefsRes] = await Promise.all([
+        const [subsRes, prefsRes] = await Promise.all([
           fetch("/api/subscriptions"),
-          fetch("/api/channels/categories"),
           fetch("/api/me/channel-prefs"),
         ]);
         const subsData = await subsRes.json().catch(() => ({}));
-        const catsData = await catsRes.json().catch(() => ({}));
         const prefsData = await prefsRes.json().catch(() => ({}));
-
         setSubs(subsData.subscriptions || []);
-        if (Array.isArray(catsData.categories)) {
-          setCategories(catsData.categories);
-        }
-        if (Array.isArray(prefsData.enabledCategoryIds)) {
-          setEnabledCategoryIds(prefsData.enabledCategoryIds);
-        }
         if (typeof prefsData.playlistUrl === "string") {
           setPlaylistUrl(prefsData.playlistUrl);
         }
@@ -106,16 +85,13 @@ export default function BrowseChannelsPage() {
     creds?.xtremePassword
   );
 
-  // -- Load streams when filters change --
+  // Load channels — no category filter, ever. Just search + pagination.
   const loadStreams = useCallback(
-    async (opts: { page: number; search: string; categoryIds: string[] }) => {
+    async (opts: { page: number; search: string }) => {
       setStreamsLoading(true);
       setStreamsError("");
       try {
         const params = new URLSearchParams();
-        if (opts.categoryIds.length > 0) {
-          params.set("category_ids", opts.categoryIds.join(","));
-        }
         if (opts.search) params.set("search", opts.search);
         params.set("page", String(opts.page));
 
@@ -123,8 +99,10 @@ export default function BrowseChannelsPage() {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         setStreamsData(data);
-      } catch (err: any) {
-        setStreamsError(err?.message || "Failed to load channels");
+      } catch (err: unknown) {
+        setStreamsError(
+          err instanceof Error ? err.message : "Failed to load channels"
+        );
         setStreamsData(null);
       } finally {
         setStreamsLoading(false);
@@ -135,41 +113,8 @@ export default function BrowseChannelsPage() {
 
   useEffect(() => {
     if (!hasCreds) return;
-    loadStreams({ page, search, categoryIds: enabledCategoryIds });
-  }, [hasCreds, page, search, enabledCategoryIds, loadStreams]);
-
-  // -- Category toggle helpers --
-  const toggleCategory = (id: string) => {
-    setEnabledCategoryIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-    setPrefsDirty(true);
-    setPage(1);
-  };
-
-  const clearCategories = () => {
-    setEnabledCategoryIds([]);
-    setPrefsDirty(true);
-    setPage(1);
-  };
-
-  const savePrefs = async () => {
-    setSavingPrefs(true);
-    try {
-      const res = await fetch("/api/me/channel-prefs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabledCategoryIds }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (typeof data.playlistUrl === "string") {
-        setPlaylistUrl(data.playlistUrl);
-      }
-      setPrefsDirty(false);
-    } finally {
-      setSavingPrefs(false);
-    }
-  };
+    loadStreams({ page, search });
+  }, [hasCreds, page, search, loadStreams]);
 
   const copyPlaylistUrl = async () => {
     if (!playlistUrl) return;
@@ -182,16 +127,6 @@ export default function BrowseChannelsPage() {
     }
   };
 
-  // -- Category grouping (by "kind" heuristic — name substring) --
-  const groupedCategories = useMemo(() => {
-    // Split into "Countries/Regions" vs "Other" heuristically — everything
-    // with a flag emoji we detect by category_name length < 30 + capital-leading.
-    // Simpler: just sort alphabetically and display as a flat grid.
-    return [...categories].sort((a, b) =>
-      a.category_name.localeCompare(b.category_name)
-    );
-  }, [categories]);
-
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       {/* Header */}
@@ -202,11 +137,8 @@ export default function BrowseChannelsPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Browse Channels</h1>
           <p className="text-sm text-slate-400">
-            Pick the categories you want and search across {" "}
-            {categories.length > 0
-              ? `${categories.length} categories`
-              : "thousands of channels"}
-            .
+            All your channels in one place. Search, tap the heart to favourite,
+            tap ▶ to watch.
           </p>
         </div>
       </div>
@@ -243,7 +175,7 @@ export default function BrowseChannelsPage() {
             <QuickWatchCard
               icon="📡"
               label="Full Live TV"
-              sub="Every MyBunny channel (unfiltered)"
+              sub="Complete live playlist"
               color="bg-blue-600/20 text-blue-400"
               webUrl={buildWebPlayerUrl(m3uUrls.liveTV)}
             />
@@ -263,160 +195,14 @@ export default function BrowseChannelsPage() {
             />
           </div>
 
-          {/* Zone 1 — "My Channels" card: always-visible tiles of the
-              user's CURRENTLY SELECTED categories. Uncheck a tile to
-              move the category back to Zone 2. */}
-          <section className="mt-8 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
-                  My Channels
-                </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  {enabledCategoryIds.length === 0
-                    ? `No categories selected yet — your M3U includes every channel. Open "Browse categories" below to pick the ones you want.`
-                    : `${enabledCategoryIds.length} ${
-                        enabledCategoryIds.length === 1
-                          ? "category"
-                          : "categories"
-                      } in your M3U. Uncheck a tile to remove it.`}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {enabledCategoryIds.length > 0 && (
-                  <button
-                    onClick={clearCategories}
-                    className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
-                  >
-                    Clear all
-                  </button>
-                )}
-                {prefsDirty && (
-                  <button
-                    onClick={savePrefs}
-                    disabled={savingPrefs}
-                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
-                  >
-                    {savingPrefs ? "Saving..." : "Save selection"}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {enabledCategoryIds.length === 0 ? (
-              <div className="mt-4 rounded-lg border border-dashed border-slate-800 bg-slate-950/50 p-6 text-center text-xs text-slate-500">
-                Nothing selected yet. Use the Browse panel below to pick
-                categories.
-              </div>
-            ) : (
-              <div className="mt-4 grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-                {enabledCategoryIds.map((id) => {
-                  const cat = categories.find((c) => c.category_id === id);
-                  const name = cat?.category_name || id;
-                  return (
-                    <button
-                      key={id}
-                      onClick={() => toggleCategory(id)}
-                      title="Uncheck to remove this category"
-                      className="flex items-center justify-between rounded-lg border border-emerald-500 bg-emerald-900/30 px-3 py-2 text-left text-xs text-emerald-100 transition hover:bg-emerald-900/50"
-                    >
-                      <span className="truncate">{name}</span>
-                      <span className="ml-2 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border border-emerald-400 bg-emerald-500 text-[10px] text-slate-900">
-                        ✓
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          {/* Zone 2 — Browse categories: collapsible dropdown containing
-              only the UNSELECTED categories. Closed by default. Checking
-              a row moves the category up into Zone 1. */}
-          <section className="mt-4 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-5">
-            <button
-              onClick={() => setCategoriesExpanded((v) => !v)}
-              className="flex w-full items-center justify-between gap-3 text-left"
-            >
-              <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
-                  Browse Categories
-                </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  {categories.length === 0
-                    ? "Loading…"
-                    : `${
-                        categories.length - enabledCategoryIds.length
-                      } more to pick from. Tick a box to add it to My Channels.`}
-                </p>
-              </div>
-              <span className="flex-shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500">
-                {categoriesExpanded ? "Hide ↑" : "Open ↓"}
-              </span>
-            </button>
-
-            {categoriesExpanded && (
-              <>
-                {categories.length === 0 ? (
-                  <div className="mt-4 text-sm text-slate-500">
-                    Loading categories…
-                  </div>
-                ) : (
-                  (() => {
-                    const unselected = groupedCategories.filter(
-                      (c) => !enabledCategoryIds.includes(c.category_id)
-                    );
-                    if (unselected.length === 0) {
-                      return (
-                        <div className="mt-4 rounded-lg border border-dashed border-slate-800 bg-slate-950/50 p-6 text-center text-xs text-slate-500">
-                          All categories added to My Channels. Uncheck a tile
-                          above to move one back here.
-                        </div>
-                      );
-                    }
-                    return (
-                      <div className="mt-4 grid max-h-96 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3">
-                        {unselected.map((cat) => (
-                          <button
-                            key={cat.category_id}
-                            onClick={() => toggleCategory(cat.category_id)}
-                            title="Tick to add to My Channels"
-                            className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-left text-xs text-slate-300 transition hover:border-slate-700"
-                          >
-                            <span className="truncate">
-                              {cat.category_name}
-                            </span>
-                            <span className="ml-2 h-4 w-4 flex-shrink-0 rounded border border-slate-700" />
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })()
-                )}
-              </>
-            )}
-          </section>
-
-          {/* My Playlist URL — built from saved categories */}
+          {/* My Playlist URL (reflects your ♥ favourites automatically) */}
           <section className="mt-6 overflow-hidden rounded-2xl border border-emerald-800 bg-emerald-900/10 p-5">
             <h2 className="text-sm font-semibold uppercase tracking-widest text-emerald-300">
               My Playlist URL
             </h2>
             <p className="mt-1 text-xs text-slate-400">
-              {enabledCategoryIds.length === 0
-                ? "Currently includes every channel. Pick categories above to filter."
-                : `Only channels in your ${enabledCategoryIds.length} selected ${
-                    enabledCategoryIds.length === 1 ? "category" : "categories"
-                  }. Updates automatically when you save changes.`}
-              {prefsDirty && (
-                <>
-                  {" "}
-                  <strong className="text-amber-300">
-                    Save your selection first so the URL reflects it.
-                  </strong>
-                </>
-              )}
+              Paste this into TiviMate / IPTV Smarters / OTT Navigator.
+              Your ♥ favourites appear at the top under <strong>⭐ Favorites</strong>.
             </p>
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -433,7 +219,7 @@ export default function BrowseChannelsPage() {
                   if (!playlistUrl) e.preventDefault();
                 }}
               >
-                ▶ Watch Filtered
+                ▶ Watch
               </a>
               <button
                 onClick={copyPlaylistUrl}
@@ -446,15 +232,9 @@ export default function BrowseChannelsPage() {
             <code className="mt-2 block w-full overflow-hidden break-all rounded-md bg-slate-950 px-3 py-2 font-mono text-[11px] text-slate-400">
               {playlistUrl || "(loading…)"}
             </code>
-
-            <p className="mt-3 text-[11px] text-slate-500">
-              Paste this URL into TiviMate / IPTV Smarters / OTT Navigator as
-              an <strong>M3U playlist</strong>. It stays at the same URL even
-              if you change your category selection later.
-            </p>
           </section>
 
-          {/* Search + Streams list */}
+          {/* Search + Channels list */}
           <section className="mt-6 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex items-center gap-3">
               <input
@@ -484,7 +264,7 @@ export default function BrowseChannelsPage() {
               {streamsLoading
                 ? "Loading channels…"
                 : streamsData
-                  ? `${streamsData.total.toLocaleString()} matching channels · page ${streamsData.page} / ${streamsData.totalPages}`
+                  ? `${streamsData.total.toLocaleString()} channels · page ${streamsData.page} / ${streamsData.totalPages}`
                   : ""}
             </div>
 
@@ -494,11 +274,13 @@ export default function BrowseChannelsPage() {
               </div>
             )}
 
-            {streamsData && streamsData.streams.length === 0 && !streamsLoading && (
-              <div className="mt-6 text-center text-sm text-slate-500">
-                No channels match those filters.
-              </div>
-            )}
+            {streamsData &&
+              streamsData.streams.length === 0 &&
+              !streamsLoading && (
+                <div className="mt-6 text-center text-sm text-slate-500">
+                  No channels match that search.
+                </div>
+              )}
 
             {streamsData && streamsData.streams.length > 0 && (
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -543,10 +325,9 @@ export default function BrowseChannelsPage() {
 
           {/* Footer note */}
           <div className="mt-6 rounded-xl border border-blue-800 bg-blue-900/20 p-4 text-xs text-slate-300">
-            <strong>💡 Tip:</strong> ComfyTV provides web previews via
-            webplayer.online for quick checks. For full quality with EPG, use
-            your M3U credentials in an IPTV app like TiviMate, IPTV Smarters,
-            or OTT Navigator.
+            <strong>💡 Tip:</strong> Tap the ♥ on any channel to pin it. The
+            full setup guide is under <strong>How to Watch</strong> in the side
+            menu.
           </div>
         </>
       )}
@@ -616,9 +397,6 @@ function ChannelCard({
   isFavorite: boolean;
   onToggleFavorite: () => void;
 }) {
-  // Prefer MyBunny's own URL (if provided by the streams API) — it's the
-  // format the panel actually accepts. Fall back to a synthesised /live/
-  // URL with .m3u8 (webplayer.online only plays HLS) otherwise.
   const streamUrl =
     stream.url ||
     `${host.replace(/\/$/, "")}/live/${encodeURIComponent(
