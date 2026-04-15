@@ -2,10 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useSession } from "next-auth/react";
+import { useWallet } from "@solana/wallet-adapter-react";
+import bs58 from "bs58";
 import {
   useDashboardWallet,
   MIN_BUDJU_FOR_ACCESS,
 } from "./DashboardWalletProvider";
+import {
+  isMobileDevice,
+  buildConnectUrl,
+} from "@/lib/phantom-deeplink";
 
 export default function DashboardWalletStrip() {
   const {
@@ -137,7 +144,7 @@ function LinkWalletModal({
         {mode === "choose" ? (
           <ChooseMode
             onManual={() => setMode("manual")}
-            onClose={onClose}
+            onSuccess={onSuccess}
           />
         ) : (
           <ManualLink
@@ -154,11 +161,107 @@ function LinkWalletModal({
 
 function ChooseMode({
   onManual,
-  onClose,
+  onSuccess,
 }: {
   onManual: () => void;
-  onClose: () => void;
+  onSuccess: () => void;
 }) {
+  const { data: session } = useSession();
+  const wallet = useWallet();
+  const [linking, setLinking] = useState(false);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const [mobile, setMobile] = useState(false);
+
+  useEffect(() => {
+    setMobile(isMobileDevice());
+  }, []);
+
+  // Once we've asked the user to connect and Phantom has set publicKey,
+  // auto-sign a message and POST to /api/me/wallet to persist the link.
+  useEffect(() => {
+    if (!linking) return;
+    if (!wallet.publicKey || !wallet.signMessage) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        setStatus("Signing verification message…");
+        const address = wallet.publicKey!.toString();
+        const email = session?.user?.email;
+        if (!email) throw new Error("Session expired — reload and sign in");
+
+        const timestamp = new Date().toISOString();
+        const nonce = Math.random().toString(36).substring(2, 10);
+        const message = `Link wallet to ComfyTV\n\nAccount: ${email}\nWallet: ${address}\nTime: ${timestamp}\nNonce: ${nonce}`;
+        const encoded = new TextEncoder().encode(message);
+        const sig = await wallet.signMessage!(encoded);
+        if (cancelled) return;
+        const signature = bs58.encode(sig);
+
+        setStatus("Linking to your account…");
+        const res = await fetch("/api/me/wallet", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address, message, signature }),
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d.error || "Link failed");
+        }
+        onSuccess();
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err?.message || "Link failed");
+          setLinking(false);
+          setStatus("");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [linking, wallet.publicKey, wallet.signMessage, session?.user?.email, onSuccess]);
+
+  const handleConnect = useCallback(() => {
+    setError("");
+
+    // Mobile → redirect to Phantom deeplink
+    if (mobile) {
+      try {
+        const url = buildConnectUrl(window.location.origin + "/dashboard/order");
+        window.location.href = url;
+      } catch (err: any) {
+        setError(err?.message || "Failed to open Phantom");
+      }
+      return;
+    }
+
+    // Desktop → use wallet-adapter
+    setLinking(true);
+    setStatus("Opening Phantom extension…");
+
+    if (wallet.publicKey) {
+      // Already connected — skip straight to signing (effect handles it)
+      return;
+    }
+
+    const phantomEntry = wallet.wallets.find(
+      (w) => w.adapter.name.toLowerCase() === "phantom"
+    );
+    if (!phantomEntry) {
+      setError(
+        "Phantom extension not detected. Install from phantom.com and refresh."
+      );
+      setLinking(false);
+      setStatus("");
+      return;
+    }
+    // select() with autoConnect=true in provider triggers the popup.
+    wallet.select(phantomEntry.adapter.name);
+  }, [mobile, wallet]);
+
   return (
     <div className="p-5 space-y-3">
       <p className="text-xs text-slate-400">
@@ -166,28 +269,32 @@ function ChooseMode({
         enable crypto payments.
       </p>
 
-      <a
-        href="/dashboard/order"
-        onClick={onClose}
-        className="block rounded-xl border border-purple-700 bg-purple-900/30 p-4 hover:border-purple-500"
+      <button
+        onClick={handleConnect}
+        disabled={linking}
+        className="w-full rounded-xl border border-purple-700 bg-purple-900/30 p-4 text-left transition hover:border-purple-500 disabled:opacity-60"
       >
         <div className="flex items-center gap-3">
-          <span className="text-2xl">📱</span>
-          <div>
+          <span className="text-2xl">👻</span>
+          <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold text-white">
               Connect Phantom (recommended)
             </div>
             <p className="text-[11px] text-slate-400">
-              Opens Phantom app (mobile) or browser extension (desktop) to
-              sign a verification message.
+              {linking
+                ? status || "Connecting…"
+                : mobile
+                  ? "Opens the Phantom mobile app to sign a verification message."
+                  : "Opens your Phantom browser extension to sign a verification message."}
             </p>
           </div>
         </div>
-      </a>
+      </button>
 
       <button
         onClick={onManual}
-        className="w-full rounded-xl border border-slate-700 bg-slate-950 p-4 text-left hover:border-slate-600"
+        disabled={linking}
+        className="w-full rounded-xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-slate-600 disabled:opacity-60"
       >
         <div className="flex items-center gap-3">
           <span className="text-2xl">✍️</span>
@@ -202,6 +309,12 @@ function ChooseMode({
           </div>
         </div>
       </button>
+
+      {error && (
+        <div className="rounded-lg border border-red-800 bg-red-900/30 px-3 py-2 text-xs text-red-300">
+          {error}
+        </div>
+      )}
     </div>
   );
 }
