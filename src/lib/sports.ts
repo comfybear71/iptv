@@ -23,6 +23,10 @@ export interface SportDef {
   categoryHints: string[];
   /** Accent Tailwind classes for the tile */
   accent: string;
+  /** TheSportsDB league IDs for upcoming events. Multiple IDs get merged. */
+  tsdbLeagueIds?: string[];
+  /** Friendly hint about which MyBunny channel usually carries this sport */
+  channelHint?: string;
 }
 
 export const SPORTS: SportDef[] = [
@@ -31,15 +35,11 @@ export const SPORTS: SportDef[] = [
     label: "AFL",
     emoji: "🏉",
     blurb: "Aussie Rules — Fox Footy, Kayo, 7mate",
-    keywords: [
-      "afl",
-      "aussie rules",
-      "fox footy",
-      "afl nation",
-      "afl channel",
-    ],
+    keywords: ["afl", "aussie rules", "fox footy", "afl nation", "afl channel"],
     categoryHints: ["australia", "au sports", "aus sports"],
     accent: "from-red-700 to-orange-700",
+    tsdbLeagueIds: ["4449"],
+    channelHint: "Fox Footy HD / Kayo AFL",
   },
   {
     id: "nrl",
@@ -49,6 +49,8 @@ export const SPORTS: SportDef[] = [
     keywords: ["nrl", "rugby league", "fox league", "league live"],
     categoryHints: ["australia", "au sports", "rugby"],
     accent: "from-lime-700 to-emerald-700",
+    tsdbLeagueIds: ["4418"],
+    channelHint: "Fox League HD / Kayo NRL",
   },
   {
     id: "rugby",
@@ -65,6 +67,8 @@ export const SPORTS: SportDef[] = [
     ],
     categoryHints: ["rugby", "au sports"],
     accent: "from-emerald-700 to-teal-700",
+    tsdbLeagueIds: ["4414"],
+    channelHint: "Stan Sport / Sky Sports Rugby",
   },
   {
     id: "epl",
@@ -88,6 +92,8 @@ export const SPORTS: SportDef[] = [
     ],
     categoryHints: ["soccer", "football", "la liga", "premier", "uefa"],
     accent: "from-blue-700 to-indigo-700",
+    tsdbLeagueIds: ["4328", "4480", "4356", "4335", "4331", "4332"],
+    channelHint: "Sky Sports Football / Paramount+",
   },
   {
     id: "ufc",
@@ -104,6 +110,8 @@ export const SPORTS: SportDef[] = [
     ],
     categoryHints: ["ppv", "fighting", "combat"],
     accent: "from-red-700 to-rose-700",
+    tsdbLeagueIds: ["4443"],
+    channelHint: "UFC HD / PPV — lights up near event time",
   },
   {
     id: "boxing",
@@ -122,6 +130,7 @@ export const SPORTS: SportDef[] = [
     ],
     categoryHints: ["ppv", "boxing", "fighting"],
     accent: "from-amber-700 to-red-700",
+    channelHint: "Main Event HD / PPV",
   },
   {
     id: "nfl",
@@ -138,6 +147,8 @@ export const SPORTS: SportDef[] = [
     ],
     categoryHints: ["us sports", "nfl"],
     accent: "from-blue-800 to-sky-700",
+    tsdbLeagueIds: ["4391"],
+    channelHint: "ESPN / NFL Network / RedZone",
   },
   {
     id: "nba",
@@ -147,6 +158,8 @@ export const SPORTS: SportDef[] = [
     keywords: ["nba", "nba tv", "league pass", "basketball"],
     categoryHints: ["us sports", "basketball"],
     accent: "from-orange-700 to-amber-700",
+    tsdbLeagueIds: ["4387"],
+    channelHint: "NBA TV / ESPN / TNT",
   },
   {
     id: "golf",
@@ -156,6 +169,8 @@ export const SPORTS: SportDef[] = [
     keywords: ["golf", "pga", "liv golf", "masters", "the open", "ryder cup"],
     categoryHints: ["golf"],
     accent: "from-green-700 to-emerald-800",
+    tsdbLeagueIds: ["4425"],
+    channelHint: "Golf Channel HD / Sky Sports Golf",
   },
   {
     id: "cricket",
@@ -174,6 +189,8 @@ export const SPORTS: SportDef[] = [
     ],
     categoryHints: ["cricket", "willow"],
     accent: "from-purple-700 to-fuchsia-700",
+    tsdbLeagueIds: ["4432", "4450"],
+    channelHint: "Fox Cricket / Willow / Sky Sports Cricket",
   },
   {
     id: "motorsport",
@@ -192,6 +209,8 @@ export const SPORTS: SportDef[] = [
     ],
     categoryHints: ["motor", "racing"],
     accent: "from-slate-700 to-zinc-700",
+    tsdbLeagueIds: ["4370", "4407"],
+    channelHint: "Fox Sports 506 / Sky Sports F1",
   },
   {
     id: "tennis",
@@ -209,6 +228,8 @@ export const SPORTS: SportDef[] = [
     ],
     categoryHints: ["tennis"],
     accent: "from-yellow-700 to-lime-700",
+    tsdbLeagueIds: ["4464"],
+    channelHint: "Tennis Channel HD / Eurosport",
   },
 ];
 

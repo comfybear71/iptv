@@ -47,6 +47,7 @@ export default function BrowseChannelsPage() {
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [playlistUrl, setPlaylistUrl] = useState("");
   const [copied, setCopied] = useState(false);
+  const [categoriesExpanded, setCategoriesExpanded] = useState(false);
 
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -257,24 +258,24 @@ export default function BrowseChannelsPage() {
             />
           </div>
 
-          {/* Category picker */}
+          {/* Category picker — collapsible, closed by default */}
           <section className="mt-8 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
                   My Channels
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
                   {enabledCategoryIds.length === 0
-                    ? "Showing all categories. Tap categories below to narrow down (e.g. US + Australia)."
+                    ? `Showing all ${categories.length} categories. Tap "Browse categories" to narrow by country or type.`
                     : `Filtered to ${enabledCategoryIds.length} ${
                         enabledCategoryIds.length === 1
                           ? "category"
                           : "categories"
-                      }.`}
+                      }. Tap "Browse categories" to change.`}
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {enabledCategoryIds.length > 0 && (
                   <button
                     onClick={clearCategories}
@@ -292,41 +293,75 @@ export default function BrowseChannelsPage() {
                     {savingPrefs ? "Saving..." : "Save selection"}
                   </button>
                 )}
+                <button
+                  onClick={() => setCategoriesExpanded((v) => !v)}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500"
+                >
+                  {categoriesExpanded ? "Hide ↑" : "Browse categories ↓"}
+                </button>
               </div>
             </div>
 
-            {categories.length === 0 ? (
-              <div className="mt-4 text-sm text-slate-500">
-                Loading categories…
-              </div>
-            ) : (
-              <div className="mt-4 grid max-h-80 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3">
-                {groupedCategories.map((cat) => {
-                  const on = enabledCategoryIds.includes(cat.category_id);
+            {/* Quick view of currently-selected chips (always visible) */}
+            {enabledCategoryIds.length > 0 && !categoriesExpanded && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {enabledCategoryIds.map((id) => {
+                  const cat = categories.find((c) => c.category_id === id);
+                  const name = cat?.category_name || id;
                   return (
                     <button
-                      key={cat.category_id}
-                      onClick={() => toggleCategory(cat.category_id)}
-                      className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition ${
-                        on
-                          ? "border-emerald-500 bg-emerald-900/30 text-emerald-200"
-                          : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700"
-                      }`}
+                      key={id}
+                      onClick={() => toggleCategory(id)}
+                      className="group inline-flex items-center gap-1 rounded-full border border-emerald-600 bg-emerald-900/30 px-3 py-1 text-[11px] text-emerald-200 hover:bg-emerald-900/50"
+                      title="Remove this category"
                     >
-                      <span className="truncate">{cat.category_name}</span>
-                      <span
-                        className={`ml-2 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border text-[10px] ${
-                          on
-                            ? "border-emerald-400 bg-emerald-500 text-slate-900"
-                            : "border-slate-700"
-                        }`}
-                      >
-                        {on ? "✓" : ""}
+                      <span className="truncate max-w-[140px]">{name}</span>
+                      <span className="text-emerald-400 group-hover:text-emerald-200">
+                        ×
                       </span>
                     </button>
                   );
                 })}
               </div>
+            )}
+
+            {/* Full category grid — only when expanded */}
+            {categoriesExpanded && (
+              <>
+                {categories.length === 0 ? (
+                  <div className="mt-4 text-sm text-slate-500">
+                    Loading categories…
+                  </div>
+                ) : (
+                  <div className="mt-4 grid max-h-96 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3">
+                    {groupedCategories.map((cat) => {
+                      const on = enabledCategoryIds.includes(cat.category_id);
+                      return (
+                        <button
+                          key={cat.category_id}
+                          onClick={() => toggleCategory(cat.category_id)}
+                          className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition ${
+                            on
+                              ? "border-emerald-500 bg-emerald-900/30 text-emerald-200"
+                              : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700"
+                          }`}
+                        >
+                          <span className="truncate">{cat.category_name}</span>
+                          <span
+                            className={`ml-2 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border text-[10px] ${
+                              on
+                                ? "border-emerald-400 bg-emerald-500 text-slate-900"
+                                : "border-slate-700"
+                            }`}
+                          >
+                            {on ? "✓" : ""}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </section>
 
