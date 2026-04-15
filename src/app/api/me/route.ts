@@ -27,6 +27,10 @@ export async function GET() {
       balanceSOL: user.balanceSOL || 0,
       balanceBUDJU: user.balanceBUDJU || 0,
       autoRenew: user.autoRenew || false,
+      walletAddress: user.walletAddress || null,
+      walletVerifiedAt: user.walletVerifiedAt
+        ? new Date(user.walletVerifiedAt).toISOString()
+        : null,
     },
   });
 }

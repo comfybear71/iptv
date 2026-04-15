@@ -195,29 +195,20 @@ function WatchCard({
       </div>
       <h3 className="mt-3 text-sm font-bold text-white">{label}</h3>
       <p className="text-[11px] text-slate-500">{sub}</p>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {browse ? (
+      <div className={`mt-3 grid gap-2 ${browse ? "grid-cols-2" : "grid-cols-1"}`}>
+        {browse && (
           <a
             href={browse}
             className="rounded-md bg-slate-800 px-2 py-1.5 text-center text-xs font-medium text-slate-200 hover:bg-slate-700"
           >
             Browse
           </a>
-        ) : (
-          <a
-            href={webUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-md bg-purple-600 px-2 py-1.5 text-center text-xs font-medium text-white hover:bg-purple-500"
-          >
-            ▶ Watch
-          </a>
         )}
         <a
           href={webUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="rounded-md border border-slate-700 px-2 py-1.5 text-center text-xs font-medium text-slate-200 hover:bg-slate-800"
+          className="rounded-md bg-purple-600 px-2 py-1.5 text-center text-xs font-medium text-white hover:bg-purple-500"
         >
           ▶ Watch
         </a>
