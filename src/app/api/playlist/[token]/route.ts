@@ -53,10 +53,24 @@ export async function GET(
     ? user.channelPrefs.enabledCategoryIds.map((x: unknown) => String(x))
     : [];
 
+  const favoriteIds: number[] = Array.isArray(user.favoriteStreamIds)
+    ? user.favoriteStreamIds
+        .map((x: unknown) => Number(x))
+        .filter((n: number) => Number.isFinite(n))
+    : [];
+
   try {
-    const [categories, streams] = await Promise.all([
+    // We need every stream in the user's enabled categories PLUS every
+    // stream that matches a favorite ID. Fetch the full catalog when the
+    // user has favorites so we can pick them out; otherwise use the
+    // enabled-categories path.
+    const needAllStreams = favoriteIds.length > 0;
+    const [categories, mainStreams, allStreamsIfNeeded] = await Promise.all([
       fetchXtreamLiveCategories(creds),
       loadStreams(creds, enabled),
+      needAllStreams
+        ? fetchXtreamLiveStreams(creds)
+        : Promise.resolve([] as XtreamLiveStream[]),
     ]);
 
     const categoryNames: Record<string, string> = {};
@@ -64,8 +78,27 @@ export async function GET(
       categoryNames[cat.category_id] = cat.category_name;
     }
 
+    // Build the favorites group by picking matching streams out of the full
+    // catalog. We rename their group-title to "⭐ Favorites" via override.
+    const favoriteStreams: XtreamLiveStream[] = allStreamsIfNeeded.filter((s) =>
+      favoriteIds.includes(s.stream_id)
+    );
+    const favoritesCategoryId = "__favorites__";
+    const favoritesOverride = favoriteStreams.map((s) => ({
+      ...s,
+      category_id: favoritesCategoryId,
+    }));
+    if (favoriteStreams.length > 0) {
+      categoryNames[favoritesCategoryId] = "⭐ Favorites";
+    }
+
+    // De-dup: if a stream is both in mainStreams AND favorites, keep the
+    // favorites version (so it appears in the ⭐ group, not twice).
+    const favSet = new Set(favoriteIds);
+    const mainDeduped = mainStreams.filter((s) => !favSet.has(s.stream_id));
+
     const body = buildM3u({
-      streams,
+      streams: [...favoritesOverride, ...mainDeduped],
       host: creds.host,
       username: creds.username,
       password: creds.password,
