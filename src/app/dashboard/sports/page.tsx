@@ -9,6 +9,7 @@ import {
   StreamForFilter,
   CategoryForFilter,
 } from "@/lib/sports";
+import { useFavorites } from "@/hooks/useFavorites";
 import { SubscriptionCredentials } from "@/types";
 
 interface TsdbEvent {
@@ -30,6 +31,8 @@ interface Subscription {
 }
 
 export default function SportsPage() {
+  const { favorites, toggle: toggleFavorite } = useFavorites();
+
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [subsLoading, setSubsLoading] = useState(true);
 
@@ -303,6 +306,10 @@ export default function SportsPage() {
                       host={host}
                       username={creds!.xtremeUsername!}
                       password={creds!.xtremePassword!}
+                      isFavorite={favorites.has(stream.stream_id)}
+                      onToggleFavorite={() =>
+                        toggleFavorite(stream.stream_id)
+                      }
                     />
                   ))}
                 </div>
@@ -395,11 +402,15 @@ function ChannelTile({
   host,
   username,
   password,
+  isFavorite,
+  onToggleFavorite,
 }: {
   stream: StreamForFilter;
   host: string;
   username: string;
   password: string;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
 }) {
   const streamUrl = `${host.replace(/\/$/, "")}/live/${encodeURIComponent(
     username
@@ -433,6 +444,17 @@ function ChannelTile({
           </div>
         )}
       </div>
+      <button
+        onClick={onToggleFavorite}
+        title={isFavorite ? "Remove from favourites" : "Add to favourites"}
+        className={`flex-shrink-0 rounded-md px-2 py-1.5 text-base leading-none transition ${
+          isFavorite
+            ? "bg-rose-600/20 text-rose-400 hover:bg-rose-600/30"
+            : "bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-rose-400"
+        }`}
+      >
+        {isFavorite ? "♥" : "♡"}
+      </button>
       <a
         href={playerUrl}
         target="_blank"

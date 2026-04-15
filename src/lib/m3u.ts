@@ -16,6 +16,11 @@ function escapeExtInfAttr(value: string): string {
 /**
  * Build an M3U playlist string for the given list of Xtream streams.
  * Stream URLs point directly at MyBunny so video traffic bypasses ComfyTV.
+ *
+ * URL format uses MPEGTS (.ts) rather than HLS (.m3u8) because IPTV
+ * Smarters Pro, TiviMate, and OTT Navigator all prefer MPEGTS for
+ * Xtream-style M3U playlists. Many panels — MyBunny included — only
+ * serve 24/7 / "created_live" streams over the .ts endpoint.
  */
 export function buildM3u(opts: M3uBuildOptions): string {
   const host = opts.host.replace(/\/$/, "");
@@ -38,7 +43,7 @@ export function buildM3u(opts: M3uBuildOptions): string {
     attrs.push(`group-title="${escapeExtInfAttr(group)}"`);
 
     lines.push(`#EXTINF:-1 ${attrs.join(" ")},${name}`);
-    lines.push(`${host}/live/${u}/${p}/${s.stream_id}.m3u8`);
+    lines.push(`${host}/live/${u}/${p}/${s.stream_id}.ts`);
   }
   return lines.join("\n") + "\n";
 }

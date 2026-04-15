@@ -52,8 +52,13 @@ function buildApiUrl(creds: XtreamCredentials, action: string, params: Record<st
 async function fetchXtream<T>(url: string): Promise<T> {
   const res = await fetch(url, {
     next: { revalidate: CACHE_TTL_SECONDS },
-    // UA ≈ TiviMate to avoid any anti-bot filters
-    headers: { "User-Agent": "ComfyTV/1.0 (+https://comfytv.xyz)" },
+    // Mimic TiviMate's UA — many IPTV panels (MyBunny included) return a
+    // richer category/channel list to known IPTV-app UAs than they do to
+    // generic browser/crawler UAs.
+    headers: {
+      "User-Agent": "TiviMate/4.8.0 (Linux; Android 11)",
+      Accept: "application/json, text/plain, */*",
+    },
   });
   if (!res.ok) {
     throw new Error(`Xtream API ${res.status}: ${res.statusText}`);
