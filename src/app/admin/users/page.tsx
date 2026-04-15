@@ -13,6 +13,7 @@ interface UserData {
   activeSubscriptions: number;
   balanceSOL?: number;
   balanceBUDJU?: number;
+  budjuOnChain?: number | null;
   disabled?: boolean;
   walletAddress?: string;
 }
@@ -67,8 +68,9 @@ export default function AdminUsersPage() {
                   <th className="pb-3 pr-4">Email</th>
                   <th className="pb-3 pr-4">Role</th>
                   <th className="pb-3 pr-4">Active Subs</th>
-                  <th className="pb-3 pr-4">Balance (SOL)</th>
-                  <th className="pb-3 pr-4">Balance (BUDJU)</th>
+                  <th className="pb-3 pr-4">Credit (SOL)</th>
+                  <th className="pb-3 pr-4">Credit (BUDJU)</th>
+                  <th className="pb-3 pr-4">BUDJU On-Chain</th>
                   <th className="pb-3 pr-4">Wallet</th>
                   <th className="pb-3 pr-4">Joined</th>
                   <th className="pb-3"></th>
@@ -105,6 +107,16 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="py-3 pr-4 text-slate-300">
                       {(user.balanceBUDJU || 0).toFixed(2)}
+                    </td>
+                    <td className="py-3 pr-4 text-slate-300">
+                      {user.budjuOnChain === null ||
+                      user.budjuOnChain === undefined ? (
+                        <span className="text-slate-600">—</span>
+                      ) : (
+                        user.budjuOnChain.toLocaleString(undefined, {
+                          maximumFractionDigits: 0,
+                        })
+                      )}
                     </td>
                     <td className="py-3 pr-4 font-mono text-xs text-slate-500">
                       {user.walletAddress

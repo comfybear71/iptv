@@ -76,6 +76,11 @@ export default function AdminUserDetailPage() {
   const [balSaving, setBalSaving] = useState(false);
   const [balError, setBalError] = useState("");
 
+  // Manual wallet link form
+  const [walletInput, setWalletInput] = useState("");
+  const [walletSaving, setWalletSaving] = useState(false);
+  const [walletError, setWalletError] = useState("");
+
   const load = async () => {
     const res = await fetch(`/api/admin/users/${params.id}`);
     const data = await res.json();
@@ -113,14 +118,45 @@ export default function AdminUserDetailPage() {
     load();
   };
 
-  const toggleDisabled = async () => {
-    if (!user) return;
-    await fetch(`/api/admin/users/${params.id}`, {
+  const linkWallet = async () => {
+    const addr = walletInput.trim();
+    if (!addr) {
+      setWalletError("Paste a Solana wallet address");
+      return;
+    }
+    setWalletSaving(true);
+    setWalletError("");
+    const res = await fetch(`/api/admin/users/${params.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ disabled: !user.disabled }),
+      body: JSON.stringify({ walletAddress: addr }),
     });
-    load();
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setWalletError(d.error || "Failed to link wallet");
+    } else {
+      setWalletInput("");
+      load();
+    }
+    setWalletSaving(false);
+  };
+
+  const unlinkWallet = async () => {
+    if (!confirm("Unlink this wallet from the user?")) return;
+    setWalletSaving(true);
+    setWalletError("");
+    const res = await fetch(`/api/admin/users/${params.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unlinkWallet: true }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setWalletError(d.error || "Failed to unlink wallet");
+    } else {
+      load();
+    }
+    setWalletSaving(false);
   };
 
   const submitBalance = async () => {
@@ -216,16 +252,6 @@ export default function AdminUserDetailPage() {
                 >
                   {user.autoRenew ? "Disable auto-renew" : "Enable auto-renew"}
                 </button>
-                <button
-                  onClick={toggleDisabled}
-                  className={`rounded-lg px-3 py-1.5 text-xs hover:opacity-80 ${
-                    user.disabled
-                      ? "bg-green-700 text-white"
-                      : "bg-red-700 text-white"
-                  }`}
-                >
-                  {user.disabled ? "Re-enable" : "Disable account"}
-                </button>
               </div>
             </div>
 
@@ -268,20 +294,56 @@ export default function AdminUserDetailPage() {
                       </div>
                     )}
                   </div>
+                  <button
+                    onClick={unlinkWallet}
+                    disabled={walletSaving}
+                    className="mt-4 rounded-lg border border-red-800 bg-red-900/20 px-3 py-1.5 text-xs text-red-300 hover:bg-red-900/40 disabled:opacity-50"
+                  >
+                    {walletSaving ? "Working..." : "Unlink wallet"}
+                  </button>
+                  {walletError && (
+                    <p className="mt-2 text-xs text-red-400">{walletError}</p>
+                  )}
                 </div>
               ) : (
-                <p className="mt-2 text-sm text-slate-500">
-                  No wallet linked. User will connect on their next subscribe
-                  attempt.
-                </p>
+                <div className="mt-2">
+                  <p className="text-sm text-slate-500">
+                    No wallet linked yet. Paste a Solana wallet address below to
+                    link manually (useful if the user can&apos;t get Phantom
+                    working on their device).
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <input
+                      type="text"
+                      value={walletInput}
+                      onChange={(e) => setWalletInput(e.target.value)}
+                      placeholder="e.g. 2AnQ3qscRTeT73Yt8tHVCEMJDvfJerBP56jHhFofwqAj"
+                      className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder-slate-500"
+                    />
+                    <button
+                      onClick={linkWallet}
+                      disabled={walletSaving || !walletInput.trim()}
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+                    >
+                      {walletSaving ? "Linking..." : "Link Wallet"}
+                    </button>
+                  </div>
+                  {walletError && (
+                    <p className="mt-2 text-xs text-red-400">{walletError}</p>
+                  )}
+                  <p className="mt-2 text-[11px] text-slate-500">
+                    Admin-linked wallets skip the signature verification step.
+                    Only paste addresses you know belong to this user.
+                  </p>
+                </div>
               )}
             </div>
 
-            {/* Balances */}
+            {/* ComfyTV internal credit (deposit balances) */}
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
                 <h3 className="text-xs uppercase tracking-wide text-slate-500">
-                  SOL Balance
+                  ComfyTV Credit (SOL)
                 </h3>
                 <p className="mt-1 text-2xl font-bold text-white">
                   {(user.balanceSOL || 0).toFixed(4)} SOL
@@ -289,7 +351,7 @@ export default function AdminUserDetailPage() {
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
                 <h3 className="text-xs uppercase tracking-wide text-slate-500">
-                  BUDJU Balance
+                  ComfyTV Credit (BUDJU)
                 </h3>
                 <p className="mt-1 text-2xl font-bold text-white">
                   {(user.balanceBUDJU || 0).toFixed(2)} BUDJU
