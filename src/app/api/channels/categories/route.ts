@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
-import { fetchXtreamLiveCategories } from "@/lib/xtream";
 import { getUserXtremeCreds } from "../_helpers";
+import {
+  fetchMyBunnyEntries,
+  summariseCategories,
+} from "@/lib/mybunny-playlist";
 
 export const revalidate = 1800; // 30 min ISR
 
 // GET /api/channels/categories
-// Returns [{ category_id, category_name, parent_id }] from MyBunny's Xtream API.
+// Returns the live-TV category list extracted from MyBunny's M3U
+// playlist (so all 180+ groups are included, not the 7 that the Xtream
+// API surfaces for our reseller account).
 export async function GET() {
   const auth = await getUserXtremeCreds();
   if (!auth.ok) {
@@ -13,12 +18,11 @@ export async function GET() {
   }
 
   try {
-    const categories = await fetchXtreamLiveCategories(auth.creds);
+    const entries = await fetchMyBunnyEntries(auth.creds);
+    const categories = summariseCategories(entries);
     return NextResponse.json({ categories });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message || "Failed to fetch categories" },
-      { status: 502 }
-    );
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Failed to fetch categories";
+    return NextResponse.json({ error: msg }, { status: 502 });
   }
 }

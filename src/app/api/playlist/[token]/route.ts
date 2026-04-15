@@ -1,19 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
-import {
-  fetchXtreamLiveCategories,
-  fetchXtreamLiveStreams,
-  XtreamLiveStream,
-} from "@/lib/xtream";
-import { buildM3u } from "@/lib/m3u";
+import { fetchMyBunnyEntries } from "@/lib/mybunny-playlist";
+import { serializeM3u } from "@/lib/m3u-parse";
 import { DEFAULT_XTREME_HOST } from "@/lib/mybunny";
 
-export const revalidate = 0; // playlist reflects user prefs — always fresh
+export const revalidate = 0;
 export const dynamic = "force-dynamic";
 
-// GET /api/playlist/{token}.m3u (or just /{token})
-// Returns an M3U playlist filtered by the owning user's channelPrefs.
-// If the user has no prefs (or empty list), returns the full channel lineup.
+// GET /api/playlist/{token}.m3u
+//
+// Proxies MyBunny's own download.php playlist (which we know plays in
+// Smarters Pro / TiviMate / VLC) and filters it by:
+//   - the user's channelPrefs.enabledCategoryIds (string group-titles now)
+//   - the user's favouriteStreamIds (moved to the top under "⭐ Favorites")
 export async function GET(
   _req: NextRequest,
   ctx: { params: { token: string } }
@@ -30,7 +29,6 @@ export async function GET(
     return new NextResponse("playlist not found", { status: 404 });
   }
 
-  // Resolve active subscription credentials
   const sub = await db
     .collection("subscriptions")
     .findOne(
@@ -43,67 +41,49 @@ export async function GET(
     return new NextResponse("no active subscription", { status: 403 });
   }
 
+  const host = (c.xtremeHost || DEFAULT_XTREME_HOST).replace(/\/$/, "");
   const creds = {
-    host: c.xtremeHost || DEFAULT_XTREME_HOST,
+    host,
     username: c.xtremeUsername,
     password: c.xtremePassword,
   };
 
-  const enabled: string[] = Array.isArray(user.channelPrefs?.enabledCategoryIds)
-    ? user.channelPrefs.enabledCategoryIds.map((x: unknown) => String(x))
-    : [];
+  const enabledGroups: Set<string> = new Set(
+    (Array.isArray(user.channelPrefs?.enabledCategoryIds)
+      ? user.channelPrefs.enabledCategoryIds
+      : []
+    ).map((x: unknown) => String(x))
+  );
 
-  const favoriteIds: number[] = Array.isArray(user.favoriteStreamIds)
-    ? user.favoriteStreamIds
-        .map((x: unknown) => Number(x))
-        .filter((n: number) => Number.isFinite(n))
-    : [];
+  const favoriteIds: Set<number> = new Set(
+    (Array.isArray(user.favoriteStreamIds) ? user.favoriteStreamIds : [])
+      .map((x: unknown) => Number(x))
+      .filter((n: number) => Number.isFinite(n) && n > 0)
+  );
 
   try {
-    // We need every stream in the user's enabled categories PLUS every
-    // stream that matches a favorite ID. Fetch the full catalog when the
-    // user has favorites so we can pick them out; otherwise use the
-    // enabled-categories path.
-    const needAllStreams = favoriteIds.length > 0;
-    const [categories, mainStreams, allStreamsIfNeeded] = await Promise.all([
-      fetchXtreamLiveCategories(creds),
-      loadStreams(creds, enabled),
-      needAllStreams
-        ? fetchXtreamLiveStreams(creds)
-        : Promise.resolve([] as XtreamLiveStream[]),
-    ]);
+    const entries = await fetchMyBunnyEntries(creds);
 
-    const categoryNames: Record<string, string> = {};
-    for (const cat of categories) {
-      categoryNames[cat.category_id] = cat.category_name;
+    // Favourites (pinned to top under "⭐ Favorites")
+    const favEntries = entries
+      .filter((e) => e.streamId !== null && favoriteIds.has(e.streamId))
+      .map((e) => ({ ...e, overrideGroup: "⭐ Favorites" }));
+
+    // Rest: either everything (no prefs) or only entries whose group matches
+    let restEntries = entries;
+    if (enabledGroups.size > 0) {
+      restEntries = entries.filter((e) => enabledGroups.has(e.group));
     }
 
-    // Build the favorites group by picking matching streams out of the full
-    // catalog. We rename their group-title to "⭐ Favorites" via override.
-    const favoriteStreams: XtreamLiveStream[] = allStreamsIfNeeded.filter((s) =>
-      favoriteIds.includes(s.stream_id)
+    // De-dup — a favourited entry must not also appear in the rest list
+    const favIdSet = new Set(
+      favEntries.map((e) => e.streamId).filter((x): x is number => x !== null)
     );
-    const favoritesCategoryId = "__favorites__";
-    const favoritesOverride = favoriteStreams.map((s) => ({
-      ...s,
-      category_id: favoritesCategoryId,
-    }));
-    if (favoriteStreams.length > 0) {
-      categoryNames[favoritesCategoryId] = "⭐ Favorites";
-    }
+    restEntries = restEntries.filter(
+      (e) => e.streamId === null || !favIdSet.has(e.streamId)
+    );
 
-    // De-dup: if a stream is both in mainStreams AND favorites, keep the
-    // favorites version (so it appears in the ⭐ group, not twice).
-    const favSet = new Set(favoriteIds);
-    const mainDeduped = mainStreams.filter((s) => !favSet.has(s.stream_id));
-
-    const body = buildM3u({
-      streams: [...favoritesOverride, ...mainDeduped],
-      host: creds.host,
-      username: creds.username,
-      password: creds.password,
-      categoryNames,
-    });
+    const body = serializeM3u([...favEntries, ...restEntries]);
 
     return new NextResponse(body, {
       status: 200,
@@ -113,22 +93,8 @@ export async function GET(
         "Cache-Control": "private, max-age=300",
       },
     });
-  } catch (err: any) {
-    return new NextResponse(err?.message || "playlist build failed", {
-      status: 502,
-    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "playlist build failed";
+    return new NextResponse(msg, { status: 502 });
   }
-}
-
-async function loadStreams(
-  creds: { host: string; username: string; password: string },
-  enabledCategoryIds: string[]
-): Promise<XtreamLiveStream[]> {
-  if (enabledCategoryIds.length === 0) {
-    return fetchXtreamLiveStreams(creds);
-  }
-  const results = await Promise.all(
-    enabledCategoryIds.map((id) => fetchXtreamLiveStreams(creds, id))
-  );
-  return results.flat();
 }

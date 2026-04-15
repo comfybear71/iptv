@@ -170,7 +170,9 @@ export default function DashboardLayout({
 
         <DashboardWalletProvider isAdmin={isAdmin}>
           <DashboardWalletStrip />
-          <main className="flex-1 bg-slate-950">{children}</main>
+          <main className="min-w-0 flex-1 overflow-x-hidden bg-slate-950">
+            {children}
+          </main>
         </DashboardWalletProvider>
       </div>
     </div>

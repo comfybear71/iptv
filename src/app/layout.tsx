@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import dynamic from "next/dynamic";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
@@ -15,6 +15,16 @@ export const metadata: Metadata = {
   description: "Premium IPTV for the ComfyTV crew",
 };
 
+// Explicit viewport so iOS Safari doesn't auto-rescale the page when a
+// stray wide element slips through during render.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+  themeColor: "#0f172a",
+};
+
 export default function RootLayout({
   children,
 }: {
@@ -22,7 +32,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className="bg-slate-950 text-gray-200 font-sans">
+      <body className="overflow-x-hidden bg-slate-950 text-gray-200 font-sans">
         <SessionWrapper>
           <WalletProvider>
             <Navbar />

@@ -412,9 +412,11 @@ function ChannelTile({
   isFavorite: boolean;
   onToggleFavorite: () => void;
 }) {
-  const streamUrl = `${host.replace(/\/$/, "")}/live/${encodeURIComponent(
-    username
-  )}/${encodeURIComponent(password)}/${stream.stream_id}.m3u8`;
+  const streamUrl =
+    stream.url ||
+    `${host.replace(/\/$/, "")}/live/${encodeURIComponent(
+      username
+    )}/${encodeURIComponent(password)}/${stream.stream_id}.m3u8`;
   const playerUrl = buildWebPlayerUrl(streamUrl);
 
   return (
