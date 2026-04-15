@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
+import { DashboardWalletProvider } from "@/components/DashboardWalletProvider";
+import DashboardWalletStrip from "@/components/DashboardWalletStrip";
 
 interface NavItem {
   href: string;
@@ -164,7 +166,10 @@ export default function DashboardLayout({
           </div>
         </header>
 
-        <main className="flex-1 bg-slate-950">{children}</main>
+        <DashboardWalletProvider isAdmin={isAdmin}>
+          <DashboardWalletStrip />
+          <main className="flex-1 bg-slate-950">{children}</main>
+        </DashboardWalletProvider>
       </div>
     </div>
   );
