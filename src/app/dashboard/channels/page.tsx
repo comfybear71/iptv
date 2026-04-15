@@ -263,7 +263,9 @@ export default function BrowseChannelsPage() {
             />
           </div>
 
-          {/* Category picker — collapsible, closed by default */}
+          {/* Zone 1 — "My Channels" card: always-visible tiles of the
+              user's CURRENTLY SELECTED categories. Uncheck a tile to
+              move the category back to Zone 2. */}
           <section className="mt-8 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
@@ -272,12 +274,12 @@ export default function BrowseChannelsPage() {
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
                   {enabledCategoryIds.length === 0
-                    ? `Showing all ${categories.length} categories. Tap "Browse categories" to narrow by country or type.`
-                    : `Filtered to ${enabledCategoryIds.length} ${
+                    ? `No categories selected yet — your M3U includes every channel. Open "Browse categories" below to pick the ones you want.`
+                    : `${enabledCategoryIds.length} ${
                         enabledCategoryIds.length === 1
                           ? "category"
                           : "categories"
-                      }. Tap "Browse categories" to change.`}
+                      } in your M3U. Uncheck a tile to remove it.`}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -298,18 +300,16 @@ export default function BrowseChannelsPage() {
                     {savingPrefs ? "Saving..." : "Save selection"}
                   </button>
                 )}
-                <button
-                  onClick={() => setCategoriesExpanded((v) => !v)}
-                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500"
-                >
-                  {categoriesExpanded ? "Hide ↑" : "Browse categories ↓"}
-                </button>
               </div>
             </div>
 
-            {/* Quick view of currently-selected chips (always visible) */}
-            {enabledCategoryIds.length > 0 && !categoriesExpanded && (
-              <div className="mt-4 flex flex-wrap gap-2">
+            {enabledCategoryIds.length === 0 ? (
+              <div className="mt-4 rounded-lg border border-dashed border-slate-800 bg-slate-950/50 p-6 text-center text-xs text-slate-500">
+                Nothing selected yet. Use the Browse panel below to pick
+                categories.
+              </div>
+            ) : (
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 md:grid-cols-3">
                 {enabledCategoryIds.map((id) => {
                   const cat = categories.find((c) => c.category_id === id);
                   const name = cat?.category_name || id;
@@ -317,20 +317,45 @@ export default function BrowseChannelsPage() {
                     <button
                       key={id}
                       onClick={() => toggleCategory(id)}
-                      className="group inline-flex items-center gap-1 rounded-full border border-emerald-600 bg-emerald-900/30 px-3 py-1 text-[11px] text-emerald-200 hover:bg-emerald-900/50"
-                      title="Remove this category"
+                      title="Uncheck to remove this category"
+                      className="flex items-center justify-between rounded-lg border border-emerald-500 bg-emerald-900/30 px-3 py-2 text-left text-xs text-emerald-100 transition hover:bg-emerald-900/50"
                     >
-                      <span className="truncate max-w-[140px]">{name}</span>
-                      <span className="text-emerald-400 group-hover:text-emerald-200">
-                        ×
+                      <span className="truncate">{name}</span>
+                      <span className="ml-2 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border border-emerald-400 bg-emerald-500 text-[10px] text-slate-900">
+                        ✓
                       </span>
                     </button>
                   );
                 })}
               </div>
             )}
+          </section>
 
-            {/* Full category grid — only when expanded */}
+          {/* Zone 2 — Browse categories: collapsible dropdown containing
+              only the UNSELECTED categories. Closed by default. Checking
+              a row moves the category up into Zone 1. */}
+          <section className="mt-4 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-5">
+            <button
+              onClick={() => setCategoriesExpanded((v) => !v)}
+              className="flex w-full items-center justify-between gap-3 text-left"
+            >
+              <div className="min-w-0 flex-1">
+                <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
+                  Browse Categories
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  {categories.length === 0
+                    ? "Loading…"
+                    : `${
+                        categories.length - enabledCategoryIds.length
+                      } more to pick from. Tick a box to add it to My Channels.`}
+                </p>
+              </div>
+              <span className="flex-shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500">
+                {categoriesExpanded ? "Hide ↑" : "Open ↓"}
+              </span>
+            </button>
+
             {categoriesExpanded && (
               <>
                 {categories.length === 0 ? (
@@ -338,33 +363,36 @@ export default function BrowseChannelsPage() {
                     Loading categories…
                   </div>
                 ) : (
-                  <div className="mt-4 grid max-h-96 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3">
-                    {groupedCategories.map((cat) => {
-                      const on = enabledCategoryIds.includes(cat.category_id);
+                  (() => {
+                    const unselected = groupedCategories.filter(
+                      (c) => !enabledCategoryIds.includes(c.category_id)
+                    );
+                    if (unselected.length === 0) {
                       return (
-                        <button
-                          key={cat.category_id}
-                          onClick={() => toggleCategory(cat.category_id)}
-                          className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition ${
-                            on
-                              ? "border-emerald-500 bg-emerald-900/30 text-emerald-200"
-                              : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700"
-                          }`}
-                        >
-                          <span className="truncate">{cat.category_name}</span>
-                          <span
-                            className={`ml-2 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border text-[10px] ${
-                              on
-                                ? "border-emerald-400 bg-emerald-500 text-slate-900"
-                                : "border-slate-700"
-                            }`}
-                          >
-                            {on ? "✓" : ""}
-                          </span>
-                        </button>
+                        <div className="mt-4 rounded-lg border border-dashed border-slate-800 bg-slate-950/50 p-6 text-center text-xs text-slate-500">
+                          All categories added to My Channels. Uncheck a tile
+                          above to move one back here.
+                        </div>
                       );
-                    })}
-                  </div>
+                    }
+                    return (
+                      <div className="mt-4 grid max-h-96 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3">
+                        {unselected.map((cat) => (
+                          <button
+                            key={cat.category_id}
+                            onClick={() => toggleCategory(cat.category_id)}
+                            title="Tick to add to My Channels"
+                            className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-left text-xs text-slate-300 transition hover:border-slate-700"
+                          >
+                            <span className="truncate">
+                              {cat.category_name}
+                            </span>
+                            <span className="ml-2 h-4 w-4 flex-shrink-0 rounded border border-slate-700" />
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()
                 )}
               </>
             )}
