@@ -98,7 +98,7 @@ export default function HowToWatchPage() {
       ) : (
         <>
           {/* Credentials card */}
-          <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+          <section className="mt-6 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
               Your credentials
             </h2>
@@ -136,19 +136,19 @@ export default function HowToWatchPage() {
             </div>
           </section>
 
-          {/* Device tabs */}
-          <div className="mt-8 inline-flex rounded-xl border border-slate-800 bg-slate-900 p-1">
+          {/* Device tabs — scroll horizontally on mobile if cramped */}
+          <div className="mt-8 -mx-2 flex gap-1 overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 p-1 sm:mx-0 sm:inline-flex">
             {(
               [
-                { id: "tv", label: "📺 TV", sub: "Android TV, Fire TV, Apple TV" },
-                { id: "phone", label: "📱 Phone / Tablet", sub: "iOS, Android, iPad" },
-                { id: "computer", label: "🖥 Computer", sub: "Windows, Mac, Linux" },
+                { id: "tv", label: "📺 TV" },
+                { id: "phone", label: "📱 Phone / Tablet" },
+                { id: "computer", label: "🖥 Computer" },
               ] as const
             ).map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                className={`flex-shrink-0 rounded-lg px-3 py-2 text-xs font-medium transition sm:text-sm ${
                   tab === t.id
                     ? "bg-blue-600 text-white shadow"
                     : "text-slate-300 hover:bg-slate-800"
@@ -190,13 +190,14 @@ function CredRow({
   mono?: boolean;
 }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+    <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950 p-3">
       <div className="text-[10px] uppercase tracking-widest text-slate-500">
         {label}
       </div>
-      <div className="mt-1 flex items-center gap-2">
+      {/* Stack on mobile, side-by-side on ≥ sm */}
+      <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
         <code
-          className={`min-w-0 flex-1 truncate text-xs ${
+          className={`block min-w-0 flex-1 break-all text-xs sm:truncate ${
             mono ? "font-mono" : ""
           } text-slate-200`}
         >
@@ -204,7 +205,7 @@ function CredRow({
         </code>
         <button
           onClick={onCopy}
-          className="flex-shrink-0 rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
+          className="flex-shrink-0 self-start rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800 sm:self-auto"
         >
           {copied ? "✓ Copied" : "📋 Copy"}
         </button>

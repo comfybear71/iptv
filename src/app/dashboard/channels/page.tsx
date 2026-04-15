@@ -258,7 +258,7 @@ export default function BrowseChannelsPage() {
           </div>
 
           {/* Category picker */}
-          <section className="mt-8 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+          <section className="mt-8 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
@@ -331,7 +331,7 @@ export default function BrowseChannelsPage() {
           </section>
 
           {/* My Playlist URL — built from saved categories */}
-          <section className="mt-6 rounded-2xl border border-emerald-800 bg-emerald-900/10 p-5">
+          <section className="mt-6 overflow-hidden rounded-2xl border border-emerald-800 bg-emerald-900/10 p-5">
             <h2 className="text-sm font-semibold uppercase tracking-widest text-emerald-300">
               My Playlist URL
             </h2>
@@ -374,10 +374,10 @@ export default function BrowseChannelsPage() {
               >
                 {copied ? "✓ Copied" : "📋 Copy URL"}
               </button>
-              <code className="min-w-0 flex-1 truncate rounded-md bg-slate-950 px-3 py-2 font-mono text-[11px] text-slate-400">
-                {playlistUrl || "(loading…)"}
-              </code>
             </div>
+            <code className="mt-2 block w-full overflow-hidden break-all rounded-md bg-slate-950 px-3 py-2 font-mono text-[11px] text-slate-400">
+              {playlistUrl || "(loading…)"}
+            </code>
 
             <p className="mt-3 text-[11px] text-slate-500">
               Paste this URL into TiviMate / IPTV Smarters / OTT Navigator as
@@ -387,7 +387,7 @@ export default function BrowseChannelsPage() {
           </section>
 
           {/* Search + Streams list */}
-          <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+          <section className="mt-6 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex items-center gap-3">
               <input
                 type="text"

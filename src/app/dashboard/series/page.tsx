@@ -92,8 +92,8 @@ export default function VodSeriesPage() {
         </div>
       </div>
 
-      <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900 p-4">
-        <div className="flex items-center gap-2">
+      <div className="mt-6 overflow-hidden rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <div className="flex flex-wrap items-center gap-2">
           <a
             href={webUrl}
             target="_blank"
@@ -103,10 +103,10 @@ export default function VodSeriesPage() {
             ▶ Watch
           </a>
           <CopyButton value={url} />
-          <code className="min-w-0 flex-1 truncate font-mono text-xs text-slate-400">
-            {url}
-          </code>
         </div>
+        <code className="mt-2 block w-full break-all font-mono text-[11px] text-slate-400">
+          {url}
+        </code>
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-4">
