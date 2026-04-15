@@ -11,6 +11,18 @@ import {
 } from "@/lib/sports";
 import { SubscriptionCredentials } from "@/types";
 
+interface TsdbEvent {
+  idEvent: string;
+  strEvent: string;
+  strLeague: string;
+  strHomeTeam: string | null;
+  strAwayTeam: string | null;
+  dateEvent: string | null;
+  strTime: string | null;
+  strTimestamp: string | null;
+  strVenue: string | null;
+}
+
 interface Subscription {
   _id: string;
   status: string;
@@ -28,6 +40,13 @@ export default function SportsPage() {
 
   const [activeSport, setActiveSport] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+
+  // Upcoming events for the active sport (from TheSportsDB)
+  const [events, setEvents] = useState<TsdbEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState("");
+  const [eventsNote, setEventsNote] = useState("");
+  const [channelHint, setChannelHint] = useState<string | null>(null);
 
   // Initial load — subscription + categories
   useEffect(() => {
@@ -100,10 +119,31 @@ export default function SportsPage() {
     return full.filter((s) => s.name.toLowerCase().includes(q));
   }, [sportDef, allStreams, categories, search]);
 
+  const loadEvents = useCallback(async (sportId: string) => {
+    setEventsLoading(true);
+    setEventsError("");
+    setEventsNote("");
+    setChannelHint(null);
+    setEvents([]);
+    try {
+      const res = await fetch(`/api/sports/events?sportId=${sportId}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setEvents(Array.isArray(data.events) ? data.events : []);
+      if (data.note) setEventsNote(data.note);
+      if (typeof data.channelHint === "string") setChannelHint(data.channelHint);
+    } catch (err: unknown) {
+      setEventsError(err instanceof Error ? err.message : "Failed to load events");
+    } finally {
+      setEventsLoading(false);
+    }
+  }, []);
+
   const pickSport = (id: string) => {
     setActiveSport(id);
     setSearch("");
     loadAllStreams(); // fire once; cached after
+    loadEvents(id);
   };
 
   return (
@@ -169,6 +209,53 @@ export default function SportsPage() {
               );
             })}
           </div>
+
+          {/* Upcoming events (Phase B) */}
+          {sportDef && (
+            <section className="mt-8 overflow-hidden rounded-2xl border border-amber-800 bg-amber-900/10 p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base font-bold text-white">
+                  📅 Upcoming {sportDef.label}
+                </h2>
+                {channelHint && (
+                  <span className="rounded-full bg-amber-900/40 px-3 py-1 text-[11px] text-amber-200">
+                    Usually on: {channelHint}
+                  </span>
+                )}
+              </div>
+
+              {eventsLoading && (
+                <div className="mt-4 text-xs text-slate-500">
+                  Loading upcoming events…
+                </div>
+              )}
+              {eventsError && (
+                <div className="mt-4 rounded-lg border border-red-800 bg-red-900/30 p-3 text-xs text-red-300">
+                  {eventsError}
+                </div>
+              )}
+              {eventsNote && !eventsLoading && !eventsError && (
+                <div className="mt-4 text-xs text-slate-500">{eventsNote}</div>
+              )}
+
+              {!eventsLoading && !eventsError && events.length > 0 && (
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  {events.slice(0, 12).map((ev) => (
+                    <EventCard key={ev.idEvent} event={ev} />
+                  ))}
+                </div>
+              )}
+
+              {!eventsLoading &&
+                !eventsError &&
+                !eventsNote &&
+                events.length === 0 && (
+                  <div className="mt-4 text-xs text-slate-500">
+                    No events in the next few weeks.
+                  </div>
+                )}
+            </section>
+          )}
 
           {/* Match list */}
           {sportDef && (
@@ -246,6 +333,59 @@ export default function SportsPage() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function EventCard({ event }: { event: TsdbEvent }) {
+  const when = useMemo(() => {
+    const ts =
+      event.strTimestamp ||
+      (event.dateEvent ? `${event.dateEvent}T${event.strTime || "00:00:00"}` : "");
+    if (!ts) return { date: "TBA", time: "" };
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return { date: ts, time: "" };
+    return {
+      date: d.toLocaleDateString(undefined, {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      }),
+      time: d.toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    };
+  }, [event.strTimestamp, event.dateEvent, event.strTime]);
+
+  const title =
+    event.strHomeTeam && event.strAwayTeam
+      ? `${event.strHomeTeam} vs ${event.strAwayTeam}`
+      : event.strEvent;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-amber-900/40 bg-slate-950 p-3">
+      <div className="flex items-start gap-3">
+        <div className="flex-shrink-0 rounded-lg bg-amber-900/40 px-3 py-2 text-center">
+          <div className="text-[10px] uppercase tracking-widest text-amber-300">
+            {when.date}
+          </div>
+          <div className="text-sm font-bold text-white">{when.time || "—"}</div>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-white">
+            {title}
+          </div>
+          <div className="mt-0.5 truncate text-[11px] text-slate-400">
+            {event.strLeague}
+          </div>
+          {event.strVenue && (
+            <div className="mt-0.5 truncate text-[10px] text-slate-500">
+              📍 {event.strVenue}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
