@@ -20,7 +20,7 @@ interface SubData {
   };
 }
 
-type Filter = "all" | "active" | "expiring" | "expired" | "cancelled";
+type Filter = "all" | "active" | "expiring" | "expired";
 
 export default function AdminSubscriptionsPage() {
   const [subscriptions, setSubscriptions] = useState<SubData[]>([]);
@@ -40,11 +40,13 @@ export default function AdminSubscriptionsPage() {
   const sevenDays = new Date(now);
   sevenDays.setDate(sevenDays.getDate() + 7);
 
+  // "cancelled" is a legacy status — treat it as "expired" everywhere in the
+  // filtered view so the concept disappears from the UI but old DB rows remain.
   const filtered = subscriptions.filter((s) => {
     if (filter === "all") return true;
     if (filter === "active") return s.status === "active";
-    if (filter === "expired") return s.status === "expired";
-    if (filter === "cancelled") return s.status === "cancelled";
+    if (filter === "expired")
+      return s.status === "expired" || s.status === "cancelled";
     if (filter === "expiring") {
       const end = new Date(s.endDate);
       return s.status === "active" && end <= sevenDays && end >= now;
@@ -71,21 +73,19 @@ export default function AdminSubscriptionsPage() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          {(["all", "active", "expiring", "expired", "cancelled"] as Filter[]).map(
-            (f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium capitalize ${
-                  filter === f
-                    ? "bg-blue-600 text-white"
-                    : "bg-slate-800 text-slate-400 hover:text-white"
-                }`}
-              >
-                {f === "expiring" ? `Expiring soon (${expiringCount})` : f}
-              </button>
-            )
-          )}
+          {(["all", "active", "expiring", "expired"] as Filter[]).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium capitalize ${
+                filter === f
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-800 text-slate-400 hover:text-white"
+              }`}
+            >
+              {f === "expiring" ? `Expiring soon (${expiringCount})` : f}
+            </button>
+          ))}
         </div>
 
         {loading ? (
@@ -133,12 +133,10 @@ export default function AdminSubscriptionsPage() {
                           className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                             sub.status === "active"
                               ? "bg-green-900/50 text-green-400"
-                              : sub.status === "cancelled"
-                                ? "bg-red-900/50 text-red-400"
-                                : "bg-slate-800 text-slate-400"
+                              : "bg-slate-800 text-slate-400"
                           }`}
                         >
-                          {sub.status}
+                          {sub.status === "cancelled" ? "expired" : sub.status}
                         </span>
                       </td>
                       <td className="py-3 pr-4 text-slate-400">

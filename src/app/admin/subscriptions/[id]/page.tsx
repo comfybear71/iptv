@@ -91,7 +91,6 @@ export default function AdminSubscriptionDetailPage() {
 
   const extendBy = (months: number) =>
     patch({ extendMonths: months }, `Extended by ${months} month(s)`);
-  const cancel = () => patch({ status: "cancelled" }, "Subscription cancelled");
   const expire = () => patch({ status: "expired" }, "Marked as expired");
   const reactivate = () => patch({ status: "active" }, "Reactivated");
   const saveNotes = () => patch({ notes }, "Notes saved");
@@ -167,12 +166,10 @@ export default function AdminSubscriptionDetailPage() {
                       className={`rounded-full px-2.5 py-1 text-xs font-medium ${
                         sub.status === "active"
                           ? "bg-green-900/50 text-green-400"
-                          : sub.status === "cancelled"
-                            ? "bg-red-900/50 text-red-400"
-                            : "bg-slate-800 text-slate-400"
+                          : "bg-slate-800 text-slate-400"
                       }`}
                     >
-                      {sub.status}
+                      {sub.status === "cancelled" ? "expired" : sub.status}
                     </span>
                   </div>
                 </div>
@@ -240,12 +237,6 @@ export default function AdminSubscriptionDetailPage() {
                     Mark expired
                   </button>
                 )}
-                <button
-                  onClick={cancel}
-                  className="rounded-lg bg-red-700 px-3 py-1.5 text-xs text-white hover:bg-red-600"
-                >
-                  Cancel
-                </button>
               </div>
             </div>
 

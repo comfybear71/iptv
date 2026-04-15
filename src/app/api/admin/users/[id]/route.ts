@@ -81,22 +81,48 @@ export async function PATCH(
   }
 
   const body = await req.json();
-  const { role, autoRenew, disabled } = body;
+  const { role, autoRenew, disabled, walletAddress, unlinkWallet } = body;
 
-  const update: any = {};
+  const update: Record<string, unknown> = {};
+  const unset: Record<string, ""> = {};
+
   if (role === "user" || role === "admin") update.role = role;
   if (typeof autoRenew === "boolean") update.autoRenew = autoRenew;
   if (typeof disabled === "boolean") update.disabled = disabled;
 
-  if (Object.keys(update).length === 0) {
+  if (typeof walletAddress === "string" && walletAddress.trim()) {
+    const trimmed = walletAddress.trim();
+    // Loose base58 sanity check — Solana addresses are 32-44 chars
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed)) {
+      return NextResponse.json(
+        { error: "Invalid Solana address format" },
+        { status: 400 }
+      );
+    }
+    update.walletAddress = trimmed;
+    update.walletVerifiedAt = new Date();
+    update.walletVerifiedBy = "admin";
+  }
+
+  if (unlinkWallet === true) {
+    unset.walletAddress = "";
+    unset.walletVerifiedAt = "";
+    unset.walletVerifiedBy = "";
+  }
+
+  if (Object.keys(update).length === 0 && Object.keys(unset).length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 
   const db = await getDb();
+  const op: Record<string, unknown> = {};
+  if (Object.keys(update).length > 0) op.$set = update;
+  if (Object.keys(unset).length > 0) op.$unset = unset;
+
   try {
     await db
       .collection("users")
-      .updateOne({ _id: new ObjectId(params.id) }, { $set: update });
+      .updateOne({ _id: new ObjectId(params.id) }, op);
   } catch {
     return NextResponse.json({ error: "Invalid user ID" }, { status: 400 });
   }
