@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   useDashboardWallet,
   MIN_BUDJU_FOR_ACCESS,
@@ -94,9 +95,32 @@ function LinkWalletModal({
   onSuccess: () => void;
 }) {
   const [mode, setMode] = useState<"choose" | "manual">("choose");
+  const [mounted, setMounted] = useState(false);
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/70 p-4 pt-12 backdrop-blur-sm">
+  // Portal mount guard — required because DashboardWalletStrip's parent
+  // (the dashboard layout's header region) has backdrop-filter, which
+  // creates a new stacking context that traps `fixed` positioning.
+  // Rendering via portal to document.body escapes every parent stacking
+  // context so the modal always sits above the page content.
+  useEffect(() => {
+    setMounted(true);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  if (!mounted) return null;
+
+  const modal = (
+    <div
+      className="fixed inset-0 flex items-start justify-center overflow-y-auto bg-black/80 p-4 pt-12 backdrop-blur-sm"
+      style={{ zIndex: 9999 }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
           <h2 className="text-sm font-semibold text-white">
@@ -124,6 +148,8 @@ function LinkWalletModal({
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }
 
 function ChooseMode({
