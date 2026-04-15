@@ -21,6 +21,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/channels", label: "Browse Channels", icon: "📺" },
   { href: "/dashboard/movies", label: "VOD Movies", icon: "🎬" },
   { href: "/dashboard/series", label: "VOD Series", icon: "🎞️" },
+  { href: "/dashboard/how-to-watch", label: "How to Watch", icon: "📱" },
   { href: "/dashboard/wallet", label: "Wallet & Deposit", icon: "💼", section: "RESELLER" },
   { href: "/dashboard/faq", label: "FAQ", icon: "❓", section: "SUPPORT" },
   { href: "/dashboard/support", label: "Get Support", icon: "🎧" },
