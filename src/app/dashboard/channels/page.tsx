@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   buildHotChannelsUrl,
   buildMyBunnyM3uUrls,
   buildWebPlayerUrl,
-  CHANNEL_CATEGORIES,
   DEFAULT_XTREME_HOST,
 } from "@/lib/mybunny";
 import { SubscriptionCredentials } from "@/types";
@@ -16,25 +15,73 @@ interface Subscription {
   credentials?: SubscriptionCredentials;
 }
 
+interface XtreamCategory {
+  category_id: string;
+  category_name: string;
+  parent_id: number;
+}
+
+interface XtreamStream {
+  stream_id: number;
+  name: string;
+  stream_icon: string;
+  category_id: string;
+  epg_channel_id: string | null;
+}
+
+interface StreamsResponse {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  streams: XtreamStream[];
+}
+
 export default function BrowseChannelsPage() {
   const [subs, setSubs] = useState<Subscription[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [subsLoading, setSubsLoading] = useState(true);
 
+  const [categories, setCategories] = useState<XtreamCategory[]>([]);
+  const [enabledCategoryIds, setEnabledCategoryIds] = useState<string[]>([]);
+  const [prefsDirty, setPrefsDirty] = useState(false);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [streamsData, setStreamsData] = useState<StreamsResponse | null>(null);
+  const [streamsLoading, setStreamsLoading] = useState(false);
+  const [streamsError, setStreamsError] = useState("");
+
+  // -- Load subscription + categories + saved prefs on mount --
   useEffect(() => {
-    fetch("/api/subscriptions")
-      .then((r) => r.json())
-      .then((d) => {
-        setSubs(d.subscriptions || []);
-        setLoading(false);
-      });
+    (async () => {
+      try {
+        const [subsRes, catsRes, prefsRes] = await Promise.all([
+          fetch("/api/subscriptions"),
+          fetch("/api/channels/categories"),
+          fetch("/api/me/channel-prefs"),
+        ]);
+        const subsData = await subsRes.json().catch(() => ({}));
+        const catsData = await catsRes.json().catch(() => ({}));
+        const prefsData = await prefsRes.json().catch(() => ({}));
+
+        setSubs(subsData.subscriptions || []);
+        if (Array.isArray(catsData.categories)) {
+          setCategories(catsData.categories);
+        }
+        if (Array.isArray(prefsData.enabledCategoryIds)) {
+          setEnabledCategoryIds(prefsData.enabledCategoryIds);
+        }
+      } finally {
+        setSubsLoading(false);
+      }
+    })();
   }, []);
 
   const active = subs.find((s) => s.status === "active");
   const creds = active?.credentials;
   const host = creds?.xtremeHost || DEFAULT_XTREME_HOST;
   const hasCreds = !!(creds?.xtremeUsername && creds?.xtremePassword);
-
-  const totalChannels = CHANNEL_CATEGORIES.reduce((s, c) => s + c.count, 0);
 
   const m3uUrls = buildMyBunnyM3uUrls(
     host,
@@ -48,8 +95,80 @@ export default function BrowseChannelsPage() {
     creds?.xtremePassword
   );
 
+  // -- Load streams when filters change --
+  const loadStreams = useCallback(
+    async (opts: { page: number; search: string; categoryIds: string[] }) => {
+      setStreamsLoading(true);
+      setStreamsError("");
+      try {
+        const params = new URLSearchParams();
+        if (opts.categoryIds.length > 0) {
+          params.set("category_ids", opts.categoryIds.join(","));
+        }
+        if (opts.search) params.set("search", opts.search);
+        params.set("page", String(opts.page));
+
+        const res = await fetch(`/api/channels/streams?${params.toString()}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        setStreamsData(data);
+      } catch (err: any) {
+        setStreamsError(err?.message || "Failed to load channels");
+        setStreamsData(null);
+      } finally {
+        setStreamsLoading(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!hasCreds) return;
+    loadStreams({ page, search, categoryIds: enabledCategoryIds });
+  }, [hasCreds, page, search, enabledCategoryIds, loadStreams]);
+
+  // -- Category toggle helpers --
+  const toggleCategory = (id: string) => {
+    setEnabledCategoryIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+    setPrefsDirty(true);
+    setPage(1);
+  };
+
+  const clearCategories = () => {
+    setEnabledCategoryIds([]);
+    setPrefsDirty(true);
+    setPage(1);
+  };
+
+  const savePrefs = async () => {
+    setSavingPrefs(true);
+    try {
+      await fetch("/api/me/channel-prefs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabledCategoryIds }),
+      });
+      setPrefsDirty(false);
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
+
+  // -- Category grouping (by "kind" heuristic — name substring) --
+  const groupedCategories = useMemo(() => {
+    // Split into "Countries/Regions" vs "Other" heuristically — everything
+    // with a flag emoji we detect by category_name length < 30 + capital-leading.
+    // Simpler: just sort alphabetically and display as a flat grid.
+    return [...categories].sort((a, b) =>
+      a.category_name.localeCompare(b.category_name)
+    );
+  }, [categories]);
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+      {/* Header */}
       <div className="flex items-center gap-3">
         <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-600/20 text-2xl">
           📺
@@ -57,20 +176,25 @@ export default function BrowseChannelsPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Browse Channels</h1>
           <p className="text-sm text-slate-400">
-            {totalChannels.toLocaleString()}+ live channels available across{" "}
-            {CHANNEL_CATEGORIES.length} categories
+            Pick the categories you want and search across {" "}
+            {categories.length > 0
+              ? `${categories.length} categories`
+              : "thousands of channels"}
+            .
           </p>
         </div>
       </div>
 
-      {!hasCreds ? (
+      {subsLoading ? (
+        <div className="mt-8 text-center text-slate-400">Loading...</div>
+      ) : !hasCreds ? (
         <div className="mt-6 rounded-2xl border border-amber-800 bg-amber-900/20 p-6 text-center">
           <h2 className="text-lg font-bold text-white">
             Subscribe to access channels
           </h2>
           <p className="mt-2 text-sm text-amber-200">
-            Pick a plan and pay to get your Xtreme credentials, then come back
-            here to start streaming.
+            Pick a plan and pay to get your credentials, then come back here to
+            browse.
           </p>
           <a
             href="/dashboard/order"
@@ -81,89 +205,202 @@ export default function BrowseChannelsPage() {
         </div>
       ) : (
         <>
-          {/* Quick-watch buttons */}
+          {/* Quick-watch tiles */}
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <WatchCard
+            <QuickWatchCard
               icon="🔥"
               label="Hot Channels"
               sub="Most-watched right now"
               color="bg-orange-600/20 text-orange-400"
               webUrl={buildWebPlayerUrl(hotUrl)}
             />
-            <WatchCard
+            <QuickWatchCard
               icon="📡"
-              label="Live TV"
-              sub="All live channels"
+              label="All Live TV"
+              sub="Full playlist"
               color="bg-blue-600/20 text-blue-400"
               webUrl={buildWebPlayerUrl(m3uUrls.liveTV)}
             />
-            <WatchCard
+            <QuickWatchCard
               icon="🎬"
               label="Movies"
               sub="On-demand films"
               color="bg-red-600/20 text-red-400"
-              webUrl={buildWebPlayerUrl(m3uUrls.movies)}
               browse="/dashboard/movies"
             />
-            <WatchCard
+            <QuickWatchCard
               icon="🎞️"
               label="TV Series"
               sub="On-demand shows"
               color="bg-cyan-600/20 text-cyan-400"
-              webUrl={buildWebPlayerUrl(m3uUrls.series)}
               browse="/dashboard/series"
             />
           </div>
 
-          {/* Helpful note */}
-          <div className="mt-6 rounded-xl border border-blue-800 bg-blue-900/20 p-4 text-sm text-slate-300">
-            <p>
-              <strong>📱 Pick channels in your IPTV app.</strong> ComfyTV
-              gives you the M3U credentials — the actual channel browser lives
-              inside your IPTV Smarters / TiviMate / OTT Navigator app.
-            </p>
-            <p className="mt-2 text-xs text-slate-400">
-              Categories below are a preview. The full live list with on/off
-              toggles is in MyBunny&apos;s portal:
-            </p>
-            <a
-              href="https://mybunny.tv"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 inline-block rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700"
-            >
-              Open MyBunny Portal →
-            </a>
-          </div>
-
-          {/* Categories list */}
-          <div className="mt-8">
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
-              Categories
-            </h2>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {CHANNEL_CATEGORIES.map((cat) => (
-                <div
-                  key={cat.name}
-                  className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-4 py-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">{cat.flag || "📺"}</span>
-                    <div>
-                      <div className="text-sm font-semibold text-white">
-                        {cat.name}
-                      </div>
-                      <div className="text-[11px] text-slate-500">
-                        {cat.count.toLocaleString()} channels
-                      </div>
-                    </div>
-                  </div>
-                  <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">
-                    Live
-                  </span>
-                </div>
-              ))}
+          {/* Category picker */}
+          <section className="mt-8 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
+                  My Channels
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  {enabledCategoryIds.length === 0
+                    ? "Showing all categories. Tap categories below to narrow down (e.g. US + Australia)."
+                    : `Filtered to ${enabledCategoryIds.length} ${
+                        enabledCategoryIds.length === 1
+                          ? "category"
+                          : "categories"
+                      }.`}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                {enabledCategoryIds.length > 0 && (
+                  <button
+                    onClick={clearCategories}
+                    className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
+                  >
+                    Clear all
+                  </button>
+                )}
+                {prefsDirty && (
+                  <button
+                    onClick={savePrefs}
+                    disabled={savingPrefs}
+                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                  >
+                    {savingPrefs ? "Saving..." : "Save selection"}
+                  </button>
+                )}
+              </div>
             </div>
+
+            {categories.length === 0 ? (
+              <div className="mt-4 text-sm text-slate-500">
+                Loading categories…
+              </div>
+            ) : (
+              <div className="mt-4 grid max-h-80 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3">
+                {groupedCategories.map((cat) => {
+                  const on = enabledCategoryIds.includes(cat.category_id);
+                  return (
+                    <button
+                      key={cat.category_id}
+                      onClick={() => toggleCategory(cat.category_id)}
+                      className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition ${
+                        on
+                          ? "border-emerald-500 bg-emerald-900/30 text-emerald-200"
+                          : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700"
+                      }`}
+                    >
+                      <span className="truncate">{cat.category_name}</span>
+                      <span
+                        className={`ml-2 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border text-[10px] ${
+                          on
+                            ? "border-emerald-400 bg-emerald-500 text-slate-900"
+                            : "border-slate-700"
+                        }`}
+                      >
+                        {on ? "✓" : ""}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* Search + Streams list */}
+          <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+            <div className="flex items-center gap-3">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search channel name (e.g. CNN, Fox, Seven)"
+                className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-purple-500 focus:outline-none"
+              />
+              {search && (
+                <button
+                  onClick={() => {
+                    setSearch("");
+                    setPage(1);
+                  }}
+                  className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            <div className="mt-3 text-xs text-slate-500">
+              {streamsLoading
+                ? "Loading channels…"
+                : streamsData
+                  ? `${streamsData.total.toLocaleString()} matching channels · page ${streamsData.page} / ${streamsData.totalPages}`
+                  : ""}
+            </div>
+
+            {streamsError && (
+              <div className="mt-3 rounded-lg border border-red-800 bg-red-900/30 p-3 text-xs text-red-300">
+                {streamsError}
+              </div>
+            )}
+
+            {streamsData && streamsData.streams.length === 0 && !streamsLoading && (
+              <div className="mt-6 text-center text-sm text-slate-500">
+                No channels match those filters.
+              </div>
+            )}
+
+            {streamsData && streamsData.streams.length > 0 && (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {streamsData.streams.map((stream) => (
+                  <ChannelCard
+                    key={stream.stream_id}
+                    stream={stream}
+                    host={host}
+                    username={creds!.xtremeUsername!}
+                    password={creds!.xtremePassword!}
+                  />
+                ))}
+              </div>
+            )}
+
+            {streamsData && streamsData.totalPages > 1 && (
+              <div className="mt-5 flex items-center justify-between text-xs">
+                <button
+                  disabled={page <= 1 || streamsLoading}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="rounded-lg border border-slate-700 px-3 py-1.5 text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+                >
+                  ← Prev
+                </button>
+                <span className="text-slate-500">
+                  Page {page} of {streamsData.totalPages}
+                </span>
+                <button
+                  disabled={page >= streamsData.totalPages || streamsLoading}
+                  onClick={() =>
+                    setPage((p) => Math.min(streamsData.totalPages, p + 1))
+                  }
+                  className="rounded-lg border border-slate-700 px-3 py-1.5 text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* Footer note */}
+          <div className="mt-6 rounded-xl border border-blue-800 bg-blue-900/20 p-4 text-xs text-slate-300">
+            <strong>💡 Tip:</strong> ComfyTV provides web previews via
+            webplayer.online for quick checks. For full quality with EPG, use
+            your M3U credentials in an IPTV app like TiviMate, IPTV Smarters,
+            or OTT Navigator.
           </div>
         </>
       )}
@@ -171,7 +408,7 @@ export default function BrowseChannelsPage() {
   );
 }
 
-function WatchCard({
+function QuickWatchCard({
   icon,
   label,
   sub,
@@ -183,7 +420,7 @@ function WatchCard({
   label: string;
   sub: string;
   color: string;
-  webUrl: string;
+  webUrl?: string;
   browse?: string;
 }) {
   return (
@@ -195,24 +432,80 @@ function WatchCard({
       </div>
       <h3 className="mt-3 text-sm font-bold text-white">{label}</h3>
       <p className="text-[11px] text-slate-500">{sub}</p>
-      <div className={`mt-3 grid gap-2 ${browse ? "grid-cols-2" : "grid-cols-1"}`}>
-        {browse && (
+      <div className="mt-3">
+        {browse ? (
           <a
             href={browse}
-            className="rounded-md bg-slate-800 px-2 py-1.5 text-center text-xs font-medium text-slate-200 hover:bg-slate-700"
+            className="block rounded-md bg-purple-600 px-2 py-1.5 text-center text-xs font-medium text-white hover:bg-purple-500"
           >
             Browse
           </a>
-        )}
-        <a
-          href={webUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded-md bg-purple-600 px-2 py-1.5 text-center text-xs font-medium text-white hover:bg-purple-500"
-        >
-          ▶ Watch
-        </a>
+        ) : webUrl ? (
+          <a
+            href={webUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block rounded-md bg-purple-600 px-2 py-1.5 text-center text-xs font-medium text-white hover:bg-purple-500"
+          >
+            ▶ Watch
+          </a>
+        ) : null}
       </div>
+    </div>
+  );
+}
+
+function ChannelCard({
+  stream,
+  host,
+  username,
+  password,
+}: {
+  stream: XtreamStream;
+  host: string;
+  username: string;
+  password: string;
+}) {
+  const streamUrl = `${host.replace(/\/$/, "")}/live/${encodeURIComponent(
+    username
+  )}/${encodeURIComponent(password)}/${stream.stream_id}.m3u8`;
+  const playerUrl = buildWebPlayerUrl(streamUrl);
+
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950 p-3">
+      <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-900">
+        {stream.stream_icon ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={stream.stream_icon}
+            alt={stream.name}
+            className="h-full w-full object-contain"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = "none";
+            }}
+          />
+        ) : (
+          <span className="text-xl">📺</span>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-white">
+          {stream.name}
+        </div>
+        {stream.epg_channel_id && (
+          <div className="truncate text-[10px] text-slate-500">
+            EPG: {stream.epg_channel_id}
+          </div>
+        )}
+      </div>
+      <a
+        href={playerUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-500"
+      >
+        ▶
+      </a>
     </div>
   );
 }
