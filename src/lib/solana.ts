@@ -45,6 +45,21 @@ export async function getBudjuBalance(walletAddress: string): Promise<number> {
 }
 
 /**
+ * Get native SOL balance (in SOL, not lamports) for a wallet.
+ */
+export async function getSolBalance(walletAddress: string): Promise<number> {
+  try {
+    const connection = getConnection();
+    const owner = new PublicKey(walletAddress);
+    const lamports = await connection.getBalance(owner);
+    return lamports / 1_000_000_000;
+  } catch (err) {
+    console.error("getSolBalance error:", err);
+    return 0;
+  }
+}
+
+/**
  * Get BUDJU mint decimals (cached per-request).
  */
 export async function getBudjuDecimals(): Promise<number> {

@@ -16,6 +16,8 @@ interface WalletContextValue {
   /** ComfyTV internal balance (for balance-pay subscriptions) */
   balanceSOL: number;
   balanceBUDJU: number;
+  /** Live SOL held on-chain in the linked wallet */
+  solOnChain: number;
   /** Live BUDJU held on-chain in the linked wallet */
   budjuOnChain: number;
   /** Tiered discount percentage based on budjuOnChain */
@@ -40,6 +42,7 @@ export function DashboardWalletProvider({
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [balanceSOL, setBalanceSOL] = useState(0);
   const [balanceBUDJU, setBalanceBUDJU] = useState(0);
+  const [solOnChain, setSolOnChain] = useState(0);
   const [budjuOnChain, setBudjuOnChain] = useState(0);
   const [discountPct, setDiscountPct] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -61,10 +64,12 @@ export function DashboardWalletProvider({
           );
           if (wbRes.ok) {
             const wbData = await wbRes.json();
+            setSolOnChain(wbData.solBalance || 0);
             setBudjuOnChain(wbData.budjuBalance || 0);
             setDiscountPct(wbData.discountPct || 0);
           }
         } else {
+          setSolOnChain(0);
           setBudjuOnChain(0);
           setDiscountPct(0);
         }
@@ -87,6 +92,7 @@ export function DashboardWalletProvider({
         walletAddress,
         balanceSOL,
         balanceBUDJU,
+        solOnChain,
         budjuOnChain,
         discountPct,
         hasAccess,
