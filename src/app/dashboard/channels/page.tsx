@@ -28,6 +28,8 @@ interface XtreamStream {
   stream_icon: string;
   category_id: string;
   epg_channel_id: string | null;
+  /** Direct playback URL straight from MyBunny's M3U — used AS-IS */
+  url?: string;
 }
 
 interface StreamsResponse {
@@ -586,9 +588,14 @@ function ChannelCard({
   isFavorite: boolean;
   onToggleFavorite: () => void;
 }) {
-  const streamUrl = `${host.replace(/\/$/, "")}/live/${encodeURIComponent(
-    username
-  )}/${encodeURIComponent(password)}/${stream.stream_id}.m3u8`;
+  // Prefer MyBunny's own URL (if provided by the streams API) — it's the
+  // format the panel actually accepts. Fall back to a synthesised /live/
+  // URL with .m3u8 (webplayer.online only plays HLS) otherwise.
+  const streamUrl =
+    stream.url ||
+    `${host.replace(/\/$/, "")}/live/${encodeURIComponent(
+      username
+    )}/${encodeURIComponent(password)}/${stream.stream_id}.m3u8`;
   const playerUrl = buildWebPlayerUrl(streamUrl);
 
   return (

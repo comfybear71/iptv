@@ -239,6 +239,8 @@ export interface StreamForFilter {
   stream_icon: string;
   category_id: string;
   epg_channel_id: string | null;
+  /** Direct playback URL straight from MyBunny's M3U — used AS-IS */
+  url?: string;
 }
 
 export interface CategoryForFilter {
