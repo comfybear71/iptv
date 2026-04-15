@@ -2,12 +2,17 @@
 
 import Link from "next/link";
 import { useSession, signIn, signOut } from "next-auth/react";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 export default function Navbar() {
   const { data: session } = useSession();
+  const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const isAdmin = (session?.user as any)?.role === "admin";
+
+  // Dashboard has its own top bar — don't double-stack navigation there.
+  if (pathname?.startsWith("/dashboard")) return null;
 
   return (
     <nav className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/80 backdrop-blur-md">

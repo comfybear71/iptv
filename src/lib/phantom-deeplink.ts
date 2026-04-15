@@ -26,7 +26,22 @@ const STORAGE_WALLET = "phantom_wallet_address";
 
 export function isMobileDevice(): boolean {
   if (typeof window === "undefined") return false;
-  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const ua = navigator.userAgent;
+  // Standard iOS / Android
+  if (/iPhone|iPad|iPod|Android/i.test(ua)) return true;
+  // iPadOS 13+ reports UA as "Macintosh" in desktop mode. Detect via
+  // touch support on what claims to be macOS.
+  if (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1) return true;
+  return false;
+}
+
+/**
+ * True if we're inside Phantom's in-app browser (webview).
+ * Used to show warnings when users arrive here via the `browse` deeplink.
+ */
+export function isInPhantomBrowser(): boolean {
+  if (typeof window === "undefined") return false;
+  return /phantom/i.test(navigator.userAgent);
 }
 
 // ---------- Keypair management ----------

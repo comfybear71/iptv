@@ -184,6 +184,17 @@ function SubscribeContent() {
         if (result) {
           setMobileWallet(result.walletAddress);
           fetchBalanceAndDiscount(result.walletAddress);
+          // Persist to the user's account server-side so the dashboard
+          // (and other pages) see the linked wallet on subsequent loads.
+          fetch("/api/me/wallet/phantom-mobile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ address: result.walletAddress }),
+          })
+            .then(() => setLinkedWallet(result.walletAddress))
+            .catch(() => {
+              // Non-fatal — session state still works for this tab
+            });
         }
       } catch (err: any) {
         setError(err?.message || "Connect failed");

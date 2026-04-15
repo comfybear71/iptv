@@ -9,10 +9,22 @@ import {
   BILLING_CYCLES,
   computeOrderTotalUsd,
 } from "@/types";
+import {
+  useDashboardWallet,
+  MIN_BUDJU_FOR_ACCESS,
+} from "@/components/DashboardWalletProvider";
 
 function OrderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const {
+    walletAddress,
+    budjuOnChain,
+    discountPct: walletDiscountPct,
+    hasAccess,
+    isAdmin,
+    loading: walletLoading,
+  } = useDashboardWallet();
 
   const initialPlan = (searchParams.get("plan") as PlanType) || null;
   const [months, setMonths] = useState<number>(3);
@@ -21,7 +33,12 @@ function OrderContent() {
   );
   const [budjuDiscountPct, setBudjuDiscountPct] = useState(0);
 
-  // If user has linked wallet, fetch their BUDJU balance to show the discount preview
+  // Wallet-context already fetches discount; keep local state in sync
+  useEffect(() => {
+    setBudjuDiscountPct(walletDiscountPct);
+  }, [walletDiscountPct]);
+
+  // (kept for backwards compat — legacy code path)
   useEffect(() => {
     fetch("/api/me")
       .then((r) => r.json())
@@ -104,20 +121,32 @@ function OrderContent() {
         )}
       </div>
 
-      {/* Plan cards */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-4">
-        {PLANS.map((plan) => (
-          <PlanOption
-            key={plan.id}
-            plan={plan}
-            months={months}
-            budjuDiscountPct={budjuDiscountPct}
-            highlight={plan.id === "family"}
-            selected={selectedPlan === plan.id}
-            onChoose={() => proceed(plan.id)}
-          />
-        ))}
-      </div>
+      {/* Plan cards — gated behind 1M+ BUDJU holdings */}
+      {walletLoading ? (
+        <div className="mt-6 flex h-40 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900/50 text-sm text-slate-400">
+          Checking wallet…
+        </div>
+      ) : hasAccess ? (
+        <div className="mt-6 grid gap-4 lg:grid-cols-4">
+          {PLANS.map((plan) => (
+            <PlanOption
+              key={plan.id}
+              plan={plan}
+              months={months}
+              budjuDiscountPct={budjuDiscountPct}
+              highlight={plan.id === "family"}
+              selected={selectedPlan === plan.id}
+              onChoose={() => proceed(plan.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        <BudjuGate
+          hasWallet={!!walletAddress}
+          budjuOnChain={budjuOnChain}
+          isAdmin={isAdmin}
+        />
+      )}
 
       <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 rounded-xl border border-slate-800 bg-slate-900/30 px-4 py-3 text-xs text-slate-400">
         <span className="flex items-center gap-1">🔒 Secure Payment</span>
@@ -241,6 +270,110 @@ function PlanOption({
           ▶ Choose {plan.name}
         </button>
       </div>
+    </div>
+  );
+}
+
+function BudjuGate({
+  hasWallet,
+  budjuOnChain,
+  isAdmin,
+}: {
+  hasWallet: boolean;
+  budjuOnChain: number;
+  isAdmin: boolean;
+}) {
+  const needed = MIN_BUDJU_FOR_ACCESS - budjuOnChain;
+  return (
+    <div className="mt-6 overflow-hidden rounded-2xl border-2 border-amber-800/60 bg-gradient-to-br from-amber-950 via-slate-900 to-slate-950 p-8 text-center shadow-2xl">
+      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-amber-600/20 text-4xl">
+        🔒
+      </div>
+      <h2 className="mt-4 text-xl font-bold text-white">
+        BUDJU Holders Only
+      </h2>
+      <p className="mx-auto mt-3 max-w-lg text-sm text-slate-300">
+        ComfyTV is a friends-only service. To unlock plan purchases, you need
+        to hold at least{" "}
+        <strong className="text-amber-300">
+          {MIN_BUDJU_FOR_ACCESS.toLocaleString()} BUDJU
+        </strong>{" "}
+        in your linked Solana wallet.
+      </p>
+
+      <div className="mx-auto mt-5 grid max-w-md gap-2 rounded-xl bg-slate-950/60 p-4 text-left text-xs">
+        <Row
+          label="Wallet linked"
+          value={hasWallet ? "✓ Yes" : "✗ No"}
+          good={hasWallet}
+        />
+        <Row
+          label="BUDJU on-chain"
+          value={budjuOnChain.toLocaleString()}
+          good={budjuOnChain > 0}
+        />
+        <Row
+          label="Required"
+          value={MIN_BUDJU_FOR_ACCESS.toLocaleString()}
+          good={budjuOnChain >= MIN_BUDJU_FOR_ACCESS}
+        />
+        {hasWallet && needed > 0 && (
+          <Row
+            label="Short by"
+            value={needed.toLocaleString()}
+            good={false}
+          />
+        )}
+      </div>
+
+      <div className="mt-6 flex flex-wrap justify-center gap-3">
+        {!hasWallet && (
+          <p className="w-full text-xs text-amber-200">
+            Start by tapping <strong>Link Wallet</strong> in the top strip.
+          </p>
+        )}
+        <a
+          href="https://www.budju.xyz/swap"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-lg bg-amber-500 px-5 py-2.5 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+        >
+          🪙 Get BUDJU
+        </a>
+        <a
+          href="/dashboard/wallet"
+          className="rounded-lg border border-slate-700 px-5 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+        >
+          Wallet Details →
+        </a>
+      </div>
+
+      {isAdmin && (
+        <p className="mt-4 text-[11px] text-amber-300">
+          (Admins bypass this gate automatically.)
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Row({
+  label,
+  value,
+  good,
+}: {
+  label: string;
+  value: string;
+  good: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-slate-400">{label}</span>
+      <span
+        className={`font-mono font-semibold ${good ? "text-emerald-400" : "text-red-400"}`}
+      >
+        {value}
+      </span>
     </div>
   );
 }
