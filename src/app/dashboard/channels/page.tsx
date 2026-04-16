@@ -61,6 +61,20 @@ export default function BrowseChannelsPage() {
   const [streamsLoading, setStreamsLoading] = useState(false);
   const [streamsError, setStreamsError] = useState("");
 
+  // Favourite-channel detail: full channel objects + per-category counts.
+  // Used to render removable pills on the playlist card and "5/490" badges
+  // in the category sidebar.
+  interface FavoriteChannel {
+    stream_id: number;
+    name: string;
+    tvg_name: string;
+    group: string;
+  }
+  const [favChannels, setFavChannels] = useState<FavoriteChannel[]>([]);
+  const [favByCategory, setFavByCategory] = useState<Record<string, number>>(
+    {}
+  );
+
   // Initial load: subscription + personal M3U URL + categories
   useEffect(() => {
     (async () => {
@@ -99,6 +113,35 @@ export default function BrowseChannelsPage() {
       }
     })();
   }, [hasCreds]);
+
+  // Re-fetch favourite detail whenever the user toggles a heart. The
+  // useFavorites() hook manages the Set; we just need the richer
+  // channel-name + category-count info that only the server has.
+  const loadFavoritesDetail = useCallback(async () => {
+    try {
+      const res = await fetch("/api/me/favorites/detail", {
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (Array.isArray(data.channels)) setFavChannels(data.channels);
+      if (data.byCategory && typeof data.byCategory === "object") {
+        setFavByCategory(data.byCategory);
+      }
+    } catch {
+      // non-critical; badges just won't render
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasCreds) return;
+    loadFavoritesDetail();
+  }, [hasCreds, loadFavoritesDetail]);
+
+  // When favorites Set changes (heart toggled), refresh the detail.
+  useEffect(() => {
+    if (!hasCreds) return;
+    loadFavoritesDetail();
+  }, [favorites.size, hasCreds, loadFavoritesDetail]);
 
   const m3uUrls = buildMyBunnyM3uUrls(
     host,
@@ -259,6 +302,34 @@ export default function BrowseChannelsPage() {
             <code className="mt-2 block w-full overflow-hidden break-all rounded-md bg-slate-950 px-3 py-2 font-mono text-[11px] text-slate-400">
               {playlistUrl || "(loading…)"}
             </code>
+
+            {/* Hearted channels as removable pills */}
+            {favChannels.length > 0 && (
+              <div className="mt-4">
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                  In Your Playlist
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {favChannels.map((ch) => (
+                    <span
+                      key={ch.stream_id}
+                      className="inline-flex items-center gap-1 rounded-full border border-emerald-800 bg-emerald-900/40 py-1 pl-3 pr-1 text-[11px] text-emerald-200"
+                    >
+                      <span className="max-w-[200px] truncate" title={ch.name}>
+                        {ch.tvg_name || ch.name}
+                      </span>
+                      <button
+                        onClick={() => toggleFavorite(ch.stream_id)}
+                        title="Remove from playlist"
+                        className="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-800/60 text-emerald-100 hover:bg-rose-600/60 hover:text-white"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
 
           {/* Category sidebar + Channels grid — stacked below lg (1024px), side-by-side above */}
@@ -295,13 +366,11 @@ export default function BrowseChannelsPage() {
                       }`}
                     >
                       <span>All Channels</span>
-                      <span className={`rounded-full px-2 py-0.5 text-xs ${
-                        selectedCategory === null
-                          ? "bg-purple-500 text-white"
-                          : "bg-slate-800 text-slate-400"
-                      }`}>
-                        {totalChannels.toLocaleString()}
-                      </span>
+                      <CountBadge
+                        hearted={favorites.size}
+                        total={totalChannels}
+                        selected={selectedCategory === null}
+                      />
                     </button>
                     {categories.map((cat) => (
                       <button
@@ -314,13 +383,11 @@ export default function BrowseChannelsPage() {
                         }`}
                       >
                         <span className="truncate pr-2">{cat.category_name}</span>
-                        <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs ${
-                          selectedCategory === cat.category_id
-                            ? "bg-purple-500 text-white"
-                            : "bg-slate-800 text-slate-400"
-                        }`}>
-                          {cat.count.toLocaleString()}
-                        </span>
+                        <CountBadge
+                          hearted={favByCategory[cat.category_id] || 0}
+                          total={cat.count}
+                          selected={selectedCategory === cat.category_id}
+                        />
                       </button>
                     ))}
                   </div>
@@ -351,9 +418,11 @@ export default function BrowseChannelsPage() {
                     }`}
                   >
                     <span>All Channels</span>
-                    <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
-                      {totalChannels.toLocaleString()}
-                    </span>
+                    <CountBadge
+                      hearted={favorites.size}
+                      total={totalChannels}
+                      selected={selectedCategory === null}
+                    />
                   </button>
                   {categories.map((cat) => (
                     <button
@@ -366,9 +435,11 @@ export default function BrowseChannelsPage() {
                       }`}
                     >
                       <span className="truncate pr-2">{cat.category_name}</span>
-                      <span className="flex-shrink-0 rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
-                        {cat.count.toLocaleString()}
-                      </span>
+                      <CountBadge
+                        hearted={favByCategory[cat.category_id] || 0}
+                        total={cat.count}
+                        selected={selectedCategory === cat.category_id}
+                      />
                     </button>
                   ))}
                 </div>
@@ -619,5 +690,36 @@ function ChannelCard({
         ▶
       </a>
     </div>
+  );
+}
+
+function CountBadge({
+  hearted,
+  total,
+  selected,
+}: {
+  hearted: number;
+  total: number;
+  selected: boolean;
+}) {
+  const bgClass = selected
+    ? "bg-purple-500 text-white"
+    : "bg-slate-800 text-slate-400";
+  return (
+    <span
+      className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs ${bgClass}`}
+    >
+      {hearted > 0 && (
+        <>
+          <span className="font-semibold text-emerald-400">
+            {hearted.toLocaleString()}
+          </span>
+          <span className={selected ? "text-white/60" : "text-slate-500"}>
+            /
+          </span>
+        </>
+      )}
+      {total.toLocaleString()}
+    </span>
   );
 }
