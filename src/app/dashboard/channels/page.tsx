@@ -191,7 +191,7 @@ export default function BrowseChannelsPage() {
       ) : (
         <>
           {/* Quick-watch tiles */}
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
             <QuickWatchCard
               icon="🔥"
               label="Hot Channels"
@@ -205,20 +205,6 @@ export default function BrowseChannelsPage() {
               sub="Complete live playlist"
               color="bg-blue-600/20 text-blue-400"
               webUrl={buildWebPlayerUrl(m3uUrls.liveTV)}
-            />
-            <QuickWatchCard
-              icon="🎬"
-              label="Movies"
-              sub="On-demand films"
-              color="bg-red-600/20 text-red-400"
-              browse="/dashboard/movies"
-            />
-            <QuickWatchCard
-              icon="🎞️"
-              label="TV Series"
-              sub="On-demand shows"
-              color="bg-cyan-600/20 text-cyan-400"
-              browse="/dashboard/series"
             />
           </div>
 
