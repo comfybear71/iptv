@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
-import { fetchMyBunnyEntries } from "@/lib/mybunny-playlist";
-import { serializeM3u } from "@/lib/m3u-parse";
-import { DEFAULT_XTREME_HOST } from "@/lib/mybunny";
+import {
+  buildPerUserStreamUrl,
+  CatalogChannel,
+  CHANNELS_COLLECTION,
+} from "@/lib/channel-catalog";
 
 export const revalidate = 0;
 export const dynamic = "force-dynamic";
 
 // GET /api/playlist/{token}.m3u
 //
-// Proxies MyBunny's own download.php playlist (which we know plays in
-// Smarters Pro / TiviMate / VLC) and filters it by:
-//   - the user's channelPrefs.enabledCategoryIds (string group-titles now)
-//   - the user's favouriteStreamIds (moved to the top under "⭐ Favorites")
+// The user's personal M3U is now assembled from the master catalog in Mongo
+// (stored by /api/admin/channels/refresh) with the user's credentials
+// swapped into every stream URL. Favourites appear at the top under
+// "⭐ Favorites" and, if the user has channelPrefs.enabledCategoryIds set,
+// the rest is filtered by those groups.
 export async function GET(
   _req: NextRequest,
   ctx: { params: { token: string } }
@@ -41,55 +44,61 @@ export async function GET(
     return new NextResponse("no active subscription", { status: 403 });
   }
 
-  const host = (c.xtremeHost || DEFAULT_XTREME_HOST).replace(/\/$/, "");
-  const creds = {
-    host,
-    username: c.xtremeUsername,
-    password: c.xtremePassword,
-  };
+  const username = c.xtremeUsername;
+  const password = c.xtremePassword;
 
-  const enabledGroups: Set<string> = new Set(
+  const favoriteIds = new Set<number>(
+    (Array.isArray(user.favoriteStreamIds) ? user.favoriteStreamIds : [])
+      .map((x: unknown) => Number(x))
+      .filter((n: number) => Number.isFinite(n) && n > 0)
+  );
+
+  const enabledGroups = new Set<string>(
     (Array.isArray(user.channelPrefs?.enabledCategoryIds)
       ? user.channelPrefs.enabledCategoryIds
       : []
     ).map((x: unknown) => String(x))
   );
 
-  const favoriteIds: Set<number> = new Set(
-    (Array.isArray(user.favoriteStreamIds) ? user.favoriteStreamIds : [])
-      .map((x: unknown) => Number(x))
-      .filter((n: number) => Number.isFinite(n) && n > 0)
-  );
-
   try {
-    const entries = await fetchMyBunnyEntries(creds);
+    const allChannels = (await db
+      .collection<CatalogChannel>(CHANNELS_COLLECTION)
+      .find({})
+      .sort({ group: 1, name: 1 })
+      .toArray()) as CatalogChannel[];
 
-    // Favourites (pinned to top under "⭐ Favorites")
-    const favEntries = entries
-      .filter((e) => e.streamId !== null && favoriteIds.has(e.streamId))
-      .map((e) => ({ ...e, overrideGroup: "⭐ Favorites" }));
+    const lines: string[] = ["#EXTM3U"];
 
-    // Rest: either everything (no prefs) or only entries whose group matches
-    let restEntries = entries;
-    if (enabledGroups.size > 0) {
-      restEntries = entries.filter((e) => enabledGroups.has(e.group));
+    const favChannels = allChannels.filter((ch) =>
+      favoriteIds.has(ch.streamId)
+    );
+    for (const ch of favChannels) {
+      appendExtinf(lines, ch, "⭐ Favorites");
+      lines.push(buildPerUserStreamUrl(ch, username, password));
     }
 
-    // De-dup — a favourited entry must not also appear in the rest list
-    const favIdSet = new Set(
-      favEntries.map((e) => e.streamId).filter((x): x is number => x !== null)
-    );
-    restEntries = restEntries.filter(
-      (e) => e.streamId === null || !favIdSet.has(e.streamId)
-    );
+    let restChannels = allChannels;
+    if (enabledGroups.size > 0) {
+      restChannels = allChannels.filter((ch) => enabledGroups.has(ch.group));
+    }
+    const favIdSet = new Set(favChannels.map((ch) => ch.streamId));
+    restChannels = restChannels.filter((ch) => !favIdSet.has(ch.streamId));
 
-    const body = serializeM3u([...favEntries, ...restEntries]);
+    for (const ch of restChannels) {
+      appendExtinf(lines, ch, ch.group);
+      lines.push(buildPerUserStreamUrl(ch, username, password));
+    }
+
+    const body = lines.join("\n") + "\n";
 
     return new NextResponse(body, {
       status: 200,
       headers: {
         "Content-Type": "application/x-mpegURL; charset=utf-8",
-        "Content-Disposition": `attachment; filename="comfytv-${token.slice(0, 8)}.m3u"`,
+        "Content-Disposition": `attachment; filename="comfytv-${token.slice(
+          0,
+          8
+        )}.m3u"`,
         "Cache-Control": "private, max-age=300",
       },
     });
@@ -97,4 +106,22 @@ export async function GET(
     const msg = err instanceof Error ? err.message : "playlist build failed";
     return new NextResponse(msg, { status: 502 });
   }
+}
+
+function appendExtinf(
+  lines: string[],
+  ch: CatalogChannel,
+  group: string
+): void {
+  const attrs: string[] = [];
+  if (ch.tvgId) attrs.push(`tvg-id="${escapeAttr(ch.tvgId)}"`);
+  const name = ch.tvgName || ch.name;
+  if (name) attrs.push(`tvg-name="${escapeAttr(name)}"`);
+  if (ch.tvgLogo) attrs.push(`tvg-logo="${escapeAttr(ch.tvgLogo)}"`);
+  if (group) attrs.push(`group-title="${escapeAttr(group)}"`);
+  lines.push(`#EXTINF:-1 ${attrs.join(" ")},${ch.name}`);
+}
+
+function escapeAttr(v: string): string {
+  return v.replace(/"/g, "'").replace(/[\r\n]+/g, " ");
 }
