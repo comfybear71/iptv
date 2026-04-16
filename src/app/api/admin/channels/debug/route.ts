@@ -2,21 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions, isAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/mongodb";
-import { CHANNELS_COLLECTION } from "@/lib/channel-catalog";
+import { CHANNELS_COLLECTION, queryChannels } from "@/lib/channel-catalog";
 
 export const revalidate = 0;
 export const dynamic = "force-dynamic";
 
 /**
- * Admin-only diagnostic: GET /api/admin/channels/debug?q=rick
- * Returns:
- *   - total channels in the catalog
- *   - total matching `q` in ANY of name/tvgName/tvgId across ALL categories
- *   - total matching `q` restricted to a category, if provided via ?category=
- *   - first 5 matching channels (full raw docs)
+ * Admin-only diagnostic: GET /api/admin/channels/debug?q=rick&category=...
  *
- * Purpose: let us verify the data is actually in the DB and see why a
- * search might be returning unexpected results.
+ * Returns TWO views of the same query:
+ *   1. Raw Mongo inline query (what this endpoint does)
+ *   2. What queryChannels() returns (the exact function /api/channels/streams
+ *      uses). If these disagree, queryChannels has a bug.
  */
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -59,15 +56,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Also return a sample of 3 channels from the specified category (or any)
-  // so we can see what `group` actually looks like in the DB.
-  const categoryFilter = category ? { group: category } : {};
-  const categorySamples = await coll
-    .find(categoryFilter)
-    .limit(3)
-    .toArray();
+  // Run the EXACT same path the streams endpoint uses so we can compare.
+  const viaQueryChannels = await queryChannels({
+    category: category ?? undefined,
+    search: q || undefined,
+    page: 1,
+    pageSize: 10,
+  });
 
-  // And the first few channels overall
+  const categoryFilter = category ? { group: category } : {};
+  const categorySamples = await coll.find(categoryFilter).limit(3).toArray();
   const headChannels = await coll.find({}).limit(3).toArray();
 
   return NextResponse.json({
@@ -77,6 +75,11 @@ export async function GET(req: NextRequest) {
     totalMatchingAny,
     totalMatchingInCategory,
     samples,
+    viaQueryChannels: {
+      total: viaQueryChannels.total,
+      rowCount: viaQueryChannels.rows.length,
+      firstRow: viaQueryChannels.rows[0] || null,
+    },
     categorySamples,
     headChannels,
   });
