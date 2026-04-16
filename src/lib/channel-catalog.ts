@@ -72,18 +72,35 @@ export async function refreshMasterCatalog(): Promise<{
     username
   )}&p=${encodeURIComponent(password)}`;
 
-  const res = await fetch(url, {
-    cache: "no-store",
-    headers: {
-      "User-Agent": "TiviMate/4.8.0 (Linux; Android 11)",
-      Accept:
-        "application/x-mpegURL, application/octet-stream, text/plain, */*",
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`MyBunny M3U fetch failed: HTTP ${res.status}`);
+  // 25s timeout on the MyBunny fetch — leaves ~35s for parse + DB on a
+  // Vercel Pro 60s function budget.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25_000);
+
+  let text: string;
+  try {
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "TiviMate/4.8.0 (Linux; Android 11)",
+        Accept:
+          "application/x-mpegURL, application/octet-stream, text/plain, */*",
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`MyBunny M3U fetch failed: HTTP ${res.status}`);
+    }
+    text = await res.text();
+  } catch (err: unknown) {
+    if ((err as { name?: string }).name === "AbortError") {
+      throw new Error("MyBunny M3U fetch timed out after 25s");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  const text = await res.text();
+
   if (!text.trim().startsWith("#EXTM3U")) {
     throw new Error("MyBunny returned a non-M3U body");
   }
@@ -110,18 +127,29 @@ export async function refreshMasterCatalog(): Promise<{
   }
 
   const db = await getDb();
-  const coll = db.collection<CatalogChannel>(CHANNELS_COLLECTION);
 
-  // Simpler to wipe + reload than diff. At ~21k docs this is fast.
-  await coll.deleteMany({});
-  if (docs.length > 0) {
-    await coll.insertMany(docs);
+  // Drop the collection (O(1), much faster than deleteMany on 21k docs)
+  // and also drops indexes so inserts don't pay the index-maintenance cost.
+  const existing = await db
+    .listCollections({ name: CHANNELS_COLLECTION })
+    .toArray();
+  if (existing.length > 0) {
+    await db.dropCollection(CHANNELS_COLLECTION);
   }
 
-  // Indexes for fast query
-  await coll.createIndex({ streamId: 1 });
-  await coll.createIndex({ group: 1 });
-  await coll.createIndex({ name: 1 });
+  const coll = db.collection<CatalogChannel>(CHANNELS_COLLECTION);
+
+  if (docs.length > 0) {
+    // ordered:false lets the driver parallelise writes → much faster on 21k
+    await coll.insertMany(docs, { ordered: false });
+  }
+
+  // Recreate indexes AFTER insert (faster than maintaining during insert)
+  await Promise.all([
+    coll.createIndex({ streamId: 1 }),
+    coll.createIndex({ group: 1 }),
+    coll.createIndex({ name: 1 }),
+  ]);
 
   const categoryCount = new Set(docs.map((d) => d.group)).size;
   await db

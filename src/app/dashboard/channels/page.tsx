@@ -50,7 +50,8 @@ export default function BrowseChannelsPage() {
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [catOpen, setCatOpen] = useState(false); // mobile toggle
+  const [catOpen, setCatOpen] = useState(false); // mobile dropdown
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
 
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -247,61 +248,75 @@ export default function BrowseChannelsPage() {
             </code>
           </section>
 
-          {/* Category sidebar + Channels grid */}
-          <div className="mt-6 flex flex-col md:flex-row gap-4">
-            {/* Categories sidebar — desktop: always visible, mobile: toggle */}
-            <aside className="w-56 flex-shrink-0 md:block hidden">
+          {/* Category sidebar + Channels grid — stacked below lg (1024px), side-by-side above */}
+          <div className="mt-6 flex flex-col lg:flex-row gap-4">
+            {/* Desktop sidebar (lg+): collapsible */}
+            <aside
+              className={`hidden lg:block flex-shrink-0 transition-all ${
+                desktopSidebarOpen ? "w-56" : "w-12"
+              }`}
+            >
               <div className="sticky top-20 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
-                <div className="border-b border-slate-800 px-4 py-3">
-                  <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                    <span>📂</span> Categories
-                  </h2>
-                </div>
-                <div className="max-h-[calc(100vh-10rem)] overflow-y-auto">
-                  {/* All channels option */}
+                <div className="border-b border-slate-800 px-3 py-3 flex items-center justify-between gap-2">
+                  {desktopSidebarOpen && (
+                    <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>📂</span> Categories
+                    </h2>
+                  )}
                   <button
-                    onClick={() => { setSelectedCategory(null); setPage(1); }}
-                    className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition ${
-                      selectedCategory === null
-                        ? "bg-purple-600 text-white font-semibold"
-                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                    }`}
+                    onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)}
+                    title={desktopSidebarOpen ? "Collapse" : "Expand"}
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
                   >
-                    <span>All Channels</span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${
-                      selectedCategory === null
-                        ? "bg-purple-500 text-white"
-                        : "bg-slate-800 text-slate-400"
-                    }`}>
-                      {totalChannels.toLocaleString()}
-                    </span>
+                    {desktopSidebarOpen ? "◀" : "▶"}
                   </button>
-                  {categories.map((cat) => (
+                </div>
+                {desktopSidebarOpen && (
+                  <div className="max-h-[calc(100vh-10rem)] overflow-y-auto">
                     <button
-                      key={cat.category_id}
-                      onClick={() => { setSelectedCategory(cat.category_id); setPage(1); }}
+                      onClick={() => { setSelectedCategory(null); setPage(1); }}
                       className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition ${
-                        selectedCategory === cat.category_id
+                        selectedCategory === null
                           ? "bg-purple-600 text-white font-semibold"
                           : "text-slate-300 hover:bg-slate-800 hover:text-white"
                       }`}
                     >
-                      <span className="truncate pr-2">{cat.category_name}</span>
-                      <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs ${
-                        selectedCategory === cat.category_id
+                      <span>All Channels</span>
+                      <span className={`rounded-full px-2 py-0.5 text-xs ${
+                        selectedCategory === null
                           ? "bg-purple-500 text-white"
                           : "bg-slate-800 text-slate-400"
                       }`}>
-                        {cat.count.toLocaleString()}
+                        {totalChannels.toLocaleString()}
                       </span>
                     </button>
-                  ))}
-                </div>
+                    {categories.map((cat) => (
+                      <button
+                        key={cat.category_id}
+                        onClick={() => { setSelectedCategory(cat.category_id); setPage(1); }}
+                        className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition ${
+                          selectedCategory === cat.category_id
+                            ? "bg-purple-600 text-white font-semibold"
+                            : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                        }`}
+                      >
+                        <span className="truncate pr-2">{cat.category_name}</span>
+                        <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs ${
+                          selectedCategory === cat.category_id
+                            ? "bg-purple-500 text-white"
+                            : "bg-slate-800 text-slate-400"
+                        }`}>
+                          {cat.count.toLocaleString()}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </aside>
 
-            {/* Mobile category toggle */}
-            <div className="mb-3 md:hidden w-full">
+            {/* Mobile + tablet category dropdown (below lg) */}
+            <div className="lg:hidden w-full">
               <button
                 onClick={() => setCatOpen(!catOpen)}
                 className="flex w-full items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
