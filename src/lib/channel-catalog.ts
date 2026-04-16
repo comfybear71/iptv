@@ -209,7 +209,12 @@ export async function queryChannels(opts: {
   const filter: Record<string, unknown> = {};
   if (opts.category) filter.group = opts.category;
   if (opts.search && opts.search.trim()) {
-    filter.name = { $regex: escapeRegex(opts.search.trim()), $options: "i" };
+    // Search across both the display name AND the tvg-name attribute —
+    // MyBunny uses both, e.g. a channel may show "US: AE" as name but
+    // "Rick and Morty 24/7" as tvg-name.
+    const pattern = escapeRegex(opts.search.trim());
+    const regex = { $regex: pattern, $options: "i" };
+    filter.$or = [{ name: regex }, { tvgName: regex }];
   }
   const total = await coll.countDocuments(filter);
   const rows = await coll
