@@ -125,7 +125,9 @@ export default function BrowseChannelsPage() {
         if (opts.category) params.set("category_ids", opts.category);
         params.set("page", String(opts.page));
 
-        const res = await fetch(`/api/channels/streams?${params.toString()}`);
+        const res = await fetch(`/api/channels/streams?${params.toString()}`, {
+          cache: "no-store",
+        });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         setStreamsData(data);
