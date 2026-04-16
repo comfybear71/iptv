@@ -19,6 +19,8 @@ interface Subscription {
 interface XtreamStream {
   stream_id: number;
   name: string;
+  /** The tvg-name attribute — often a cleaner show name than the raw display name */
+  tvg_name?: string;
   stream_icon: string;
   category_id: string;
   epg_channel_id: string | null;
@@ -569,9 +571,17 @@ function ChannelCard({
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="line-clamp-2 text-sm font-semibold text-white" title={stream.name}>
+        <div
+          className="line-clamp-2 text-sm font-semibold text-white"
+          title={[stream.name, stream.tvg_name].filter(Boolean).join(" · ")}
+        >
           {stream.name}
         </div>
+        {stream.tvg_name && stream.tvg_name !== stream.name && (
+          <div className="truncate text-[11px] text-slate-400">
+            {stream.tvg_name}
+          </div>
+        )}
         {stream.epg_channel_id && (
           <div className="truncate text-[10px] text-slate-500">
             EPG: {stream.epg_channel_id}

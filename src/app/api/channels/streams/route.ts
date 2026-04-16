@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
     const streams = rows.map((r) => ({
       stream_id: r.streamId,
       name: r.name,
+      tvg_name: r.tvgName,
       stream_icon: r.tvgLogo,
       category_id: r.group,
       epg_channel_id: r.tvgId || null,
