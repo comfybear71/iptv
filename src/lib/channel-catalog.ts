@@ -144,10 +144,13 @@ export async function refreshMasterCatalog(): Promise<{
     await coll.insertMany(docs, { ordered: false });
   }
 
-  // Recreate indexes AFTER insert (faster than maintaining during insert)
+  // Recreate indexes AFTER insert (faster than maintaining during insert).
+  // The compound { group: 1, name: 1 } covers both category filters AND the
+  // default sort used when building the per-user M3U — without it MongoDB
+  // had to in-memory sort all 21k docs, which was hanging /api/playlist/...
   await Promise.all([
     coll.createIndex({ streamId: 1 }),
-    coll.createIndex({ group: 1 }),
+    coll.createIndex({ group: 1, name: 1 }),
     coll.createIndex({ name: 1 }),
   ]);
 

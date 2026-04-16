@@ -8,14 +8,17 @@ import {
 
 export const revalidate = 0;
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 // GET /api/playlist/{token}.m3u
 //
-// The user's personal M3U is now assembled from the master catalog in Mongo
-// (stored by /api/admin/channels/refresh) with the user's credentials
-// swapped into every stream URL. Favourites appear at the top under
-// "⭐ Favorites" and, if the user has channelPrefs.enabledCategoryIds set,
-// the rest is filtered by those groups.
+// The user's personal M3U is streamed from the master catalog in Mongo.
+// Favourites appear at the top under "⭐ Favorites", then the rest of the
+// catalog (filtered by channelPrefs.enabledCategoryIds if set).
+//
+// Streaming avoids buffering the ~4 MB M3U in function memory and lets
+// bytes flow to the client as soon as they're generated, which keeps
+// webplayer.online and the browser happy (no 30s client-side timeout).
 export async function GET(
   _req: NextRequest,
   ctx: { params: { token: string } }
@@ -60,66 +63,101 @@ export async function GET(
     ).map((x: unknown) => String(x))
   );
 
-  try {
-    const allChannels = (await db
-      .collection<CatalogChannel>(CHANNELS_COLLECTION)
-      .find({})
-      .sort({ group: 1, name: 1 })
+  // Projection: fetch only the fields we actually need to build the M3U.
+  // Saves CPU + memory vs. pulling the full docs.
+  const projection = {
+    _id: 0,
+    streamId: 1,
+    name: 1,
+    tvgId: 1,
+    tvgName: 1,
+    tvgLogo: 1,
+    group: 1,
+    streamHost: 1,
+    urlScheme: 1,
+  } as const;
+
+  const coll = db.collection<CatalogChannel>(CHANNELS_COLLECTION);
+
+  // Favourites first (small set) — fetch them explicitly so we can prepend
+  // the ⭐ Favorites group before streaming the rest.
+  let favChannels: CatalogChannel[] = [];
+  if (favoriteIds.size > 0) {
+    favChannels = (await coll
+      .find({ streamId: { $in: Array.from(favoriteIds) } }, { projection })
+      .sort({ name: 1 })
       .toArray()) as CatalogChannel[];
-
-    const lines: string[] = ["#EXTM3U"];
-
-    const favChannels = allChannels.filter((ch) =>
-      favoriteIds.has(ch.streamId)
-    );
-    for (const ch of favChannels) {
-      appendExtinf(lines, ch, "⭐ Favorites");
-      lines.push(buildPerUserStreamUrl(ch, username, password));
-    }
-
-    let restChannels = allChannels;
-    if (enabledGroups.size > 0) {
-      restChannels = allChannels.filter((ch) => enabledGroups.has(ch.group));
-    }
-    const favIdSet = new Set(favChannels.map((ch) => ch.streamId));
-    restChannels = restChannels.filter((ch) => !favIdSet.has(ch.streamId));
-
-    for (const ch of restChannels) {
-      appendExtinf(lines, ch, ch.group);
-      lines.push(buildPerUserStreamUrl(ch, username, password));
-    }
-
-    const body = lines.join("\n") + "\n";
-
-    return new NextResponse(body, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/x-mpegURL; charset=utf-8",
-        "Content-Disposition": `attachment; filename="comfytv-${token.slice(
-          0,
-          8
-        )}.m3u"`,
-        "Cache-Control": "private, max-age=300",
-      },
-    });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "playlist build failed";
-    return new NextResponse(msg, { status: 502 });
   }
+
+  // Rest: stream via a cursor so we never buffer all 21k docs in memory.
+  const restFilter: Record<string, unknown> = {};
+  if (enabledGroups.size > 0) {
+    restFilter.group = { $in: Array.from(enabledGroups) };
+  }
+  if (favoriteIds.size > 0) {
+    restFilter.streamId = { $nin: Array.from(favoriteIds) };
+  }
+
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        controller.enqueue(encoder.encode("#EXTM3U\n"));
+
+        // Favourites
+        for (const ch of favChannels) {
+          controller.enqueue(
+            encoder.encode(serializeEntry(ch, "⭐ Favorites", username, password))
+          );
+        }
+
+        // Rest — streamed from the cursor, no toArray()
+        const cursor = coll
+          .find(restFilter, { projection })
+          .sort({ group: 1, name: 1 });
+
+        for await (const raw of cursor) {
+          const ch = raw as unknown as CatalogChannel;
+          controller.enqueue(
+            encoder.encode(serializeEntry(ch, ch.group, username, password))
+          );
+        }
+
+        controller.close();
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+  });
+
+  return new NextResponse(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/x-mpegURL; charset=utf-8",
+      "Content-Disposition": `attachment; filename="comfytv-${token.slice(
+        0,
+        8
+      )}.m3u"`,
+      "Cache-Control": "private, max-age=300",
+    },
+  });
 }
 
-function appendExtinf(
-  lines: string[],
+function serializeEntry(
   ch: CatalogChannel,
-  group: string
-): void {
+  group: string,
+  username: string,
+  password: string
+): string {
   const attrs: string[] = [];
   if (ch.tvgId) attrs.push(`tvg-id="${escapeAttr(ch.tvgId)}"`);
   const name = ch.tvgName || ch.name;
   if (name) attrs.push(`tvg-name="${escapeAttr(name)}"`);
   if (ch.tvgLogo) attrs.push(`tvg-logo="${escapeAttr(ch.tvgLogo)}"`);
   if (group) attrs.push(`group-title="${escapeAttr(group)}"`);
-  lines.push(`#EXTINF:-1 ${attrs.join(" ")},${ch.name}`);
+  const url = buildPerUserStreamUrl(ch, username, password);
+  return `#EXTINF:-1 ${attrs.join(" ")},${ch.name}\n${url}\n`;
 }
 
 function escapeAttr(v: string): string {
