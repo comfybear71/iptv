@@ -37,6 +37,7 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(false);
 
   // Gate behind auth
   useEffect(() => {
@@ -74,11 +75,15 @@ export default function DashboardLayout({
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 transform overflow-y-auto border-r border-slate-800 bg-slate-900 transition-transform md:relative md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 w-64 transform overflow-y-auto border-r border-slate-800 bg-slate-900 transition-transform ${
           drawerOpen ? "translate-x-0" : "-translate-x-full"
+        } ${
+          desktopCollapsed
+            ? "md:-translate-x-full md:w-0"
+            : "md:relative md:translate-x-0"
         }`}
       >
-        <div className="px-5 py-4">
+        <div className="flex items-center justify-between px-5 py-4">
           <Link href="/dashboard/plans" className="flex items-center gap-2">
             <span className="text-2xl">🟦</span>
             <div>
@@ -88,6 +93,15 @@ export default function DashboardLayout({
               </div>
             </div>
           </Link>
+          <button
+            onClick={() => setDesktopCollapsed(true)}
+            title="Hide sidebar"
+            className="hidden rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white md:block"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+            </svg>
+          </button>
         </div>
 
         <nav className="px-3 pb-6">
@@ -141,14 +155,28 @@ export default function DashboardLayout({
       <div className="flex flex-1 flex-col">
         {/* Top bar */}
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-800 bg-slate-950/80 px-4 py-3 backdrop-blur-md">
+          {/* Mobile drawer toggle */}
           <button
             onClick={() => setDrawerOpen(true)}
             className="rounded-lg p-2 text-slate-300 hover:bg-slate-800 md:hidden"
+            title="Open menu"
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
+          {/* Desktop sidebar reopen — only shown when collapsed */}
+          {desktopCollapsed && (
+            <button
+              onClick={() => setDesktopCollapsed(false)}
+              className="hidden rounded-lg p-2 text-slate-300 hover:bg-slate-800 md:block"
+              title="Show sidebar"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          )}
           <div className="flex flex-1 items-center justify-end gap-3">
             <div className="hidden text-right sm:block">
               <div className="text-sm font-medium text-white">
