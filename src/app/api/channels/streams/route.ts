@@ -3,6 +3,7 @@ import { getUserXtremeCreds } from "../_helpers";
 import { buildPerUserStreamUrl, queryChannels } from "@/lib/channel-catalog";
 
 export const revalidate = 0;
+export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 80;
 
