@@ -569,7 +569,7 @@ function ChannelCard({
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold text-white">
+        <div className="line-clamp-2 text-sm font-semibold text-white" title={stream.name}>
           {stream.name}
         </div>
         {stream.epg_channel_id && (
