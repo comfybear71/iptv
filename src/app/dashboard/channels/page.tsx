@@ -213,15 +213,24 @@ export default function BrowseChannelsPage() {
             />
           </div>
 
-          {/* My Playlist URL (reflects your ♥ favourites automatically) */}
+          {/* My Playlist URL — contains only the channels the user has ♥'d */}
           <section className="mt-6 overflow-hidden rounded-2xl border border-emerald-800 bg-emerald-900/10 p-5">
             <h2 className="text-sm font-semibold uppercase tracking-widest text-emerald-300">
               My Playlist URL
             </h2>
             <p className="mt-1 text-xs text-slate-400">
-              Paste this into TiviMate / IPTV Smarters / OTT Navigator.
-              Your ♥ favourites appear at the top under <strong>⭐ Favorites</strong>.
+              Your personal playlist. Tap the <span className="text-rose-400">♥</span> on any channel below to add it — only hearted channels appear here. Paste this URL into TiviMate / IPTV Smarters / OTT Navigator / VLC.
             </p>
+            {favorites.size === 0 && (
+              <p className="mt-2 text-xs text-amber-300">
+                💡 Your playlist is empty. Heart some channels below to get started.
+              </p>
+            )}
+            {favorites.size > 0 && (
+              <p className="mt-2 text-xs text-emerald-300">
+                ✓ {favorites.size} channel{favorites.size === 1 ? "" : "s"} in your playlist
+              </p>
+            )}
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <a
@@ -229,12 +238,12 @@ export default function BrowseChannelsPage() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className={`rounded-lg px-4 py-2 text-xs font-semibold text-white ${
-                  playlistUrl
+                  playlistUrl && favorites.size > 0
                     ? "bg-purple-600 hover:bg-purple-500"
                     : "cursor-not-allowed bg-slate-800 opacity-50"
                 }`}
                 onClick={(e) => {
-                  if (!playlistUrl) e.preventDefault();
+                  if (!playlistUrl || favorites.size === 0) e.preventDefault();
                 }}
               >
                 ▶ Watch
