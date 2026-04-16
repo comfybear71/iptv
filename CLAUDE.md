@@ -9,20 +9,24 @@ ComfyTV is a **friends-and-family IPTV storefront and client portal**. Customers
 The user (site owner) is building this for people who are not tech-savvy. Their friends and family paste-an-M3U flow is too fiddly. They want:
 
 1. **A clean dashboard that shows everything available to them** — live channels, VOD movies, VOD series — searchable, browsable, watchable, without leaving ComfyTV.
-2. **An "all channels" list they can scroll/search** on `/dashboard/channels`. Not a filter-by-category gate. Not a category picker that copies what another platform does. Just — **here are all your channels, search away, tap one to watch**.
+2. **A channel browser** on `/dashboard/channels` with a **categories sidebar** (like MyBunny's portal) + a scrollable channel grid. Every user sees the full **master catalog** (~21k channels / ~36 categories), not just what's ticked on their individual MyBunny sub-account.
 3. **Favourites (♥)** — tap the heart on any channel to pin it. Favourites appear at the top of the user's personal M3U URL under a "⭐ Favorites" group, so their most-watched channels are always one tap away in IPTV Smarters / TiviMate / OTT Navigator too.
 4. **A personal M3U URL** the user can copy into their TV app of choice — this URL is always up to date with their favourites.
 5. **A "How to Watch" page** that walks them through setting up IPTV Smarters / TiviMate / VLC on TV / phone / computer.
 6. **Sports discovery** at `/dashboard/sports` — pre-curated tiles (AFL, NRL, EPL, UFC, etc.) that surface the relevant channels + upcoming fixtures from neutral sources (Squiggle for AFL, TheSportsDB for global sports).
 7. **VOD Movies + VOD Series** — copy-one-URL experience that plays the whole library in their TV app.
 
+### Curation happens on MyBunny's portal, not in ComfyTV
+
+The **master MyBunny account (id 12905 / `gfjxcfhq`)** is the source of truth for what categories/channels exist in ComfyTV. When the admin unticks "Adult" on MyBunny's configure page and clicks "Refresh Catalog" on `/admin`, those channels disappear from every ComfyTV user's view. There is **no code-based blocklist**; the admin curates at the MyBunny layer.
+
 ### What the user does NOT want
 
-- **Any UI that replicates MyBunny's portal.** MyBunny has a `/client/configure.php` page where you can tick channels one-by-one. The user does **not** want ComfyTV to duplicate that. It's not our job.
-- **Category filters that depend on MyBunny's 7-category live-TV grouping.** That's a rabbit hole — MyBunny's own M3U returns whatever channels the user has already configured in their portal, and ComfyTV trying to filter further on top of that just breaks things.
+- **A category picker that makes the user tick+save before seeing content.** The sidebar is a filter (click to narrow), not a picker.
 - **Anything that forces the user to leave ComfyTV to configure stuff.** The site should feel like a self-contained app.
-- **Hard dependencies on MyBunny's portal endpoints** (anything under `/client/configure.php`, or scraped portal HTML). The only MyBunny endpoints we legitimately use are the M3U download URLs:
-  - `/client/download.php?u=X&p=Y` — live TV M3U (reflects whatever channels the user has configured on MyBunny's side, we just proxy it as-is)
+- **Per-user MyBunny sub-account tweaks.** Customers shouldn't need anything configured on MyBunny's side beyond having valid credentials. The master catalog + per-user playback URLs handles the rest (confirmed: any valid MyBunny sub-account's creds unlock any stream ID in the master catalog).
+- **Hard dependencies on MyBunny's portal HTML** (anything under `/client/configure.php`, or scraped portal pages). The only MyBunny endpoints we legitimately use are the M3U download URLs:
+  - `/client/download.php?u=X&p=Y` — live TV M3U (used once per refresh with master creds, stored in Mongo)
   - `/client/Movies.php?u=X&p=Y&s=N` — VOD Movies M3U
   - `/client/Series.php?u=X&p=Y&s=N` — VOD Series M3U
 
@@ -32,6 +36,7 @@ The user (site owner) is building this for people who are not tech-savvy. Their 
 - **Ship one focused thing per PR.** Don't pile 5 unrelated changes into a single commit. The user has limited time to review and needs to verify each change individually on Vercel.
 - **Discuss before code when the spec is ambiguous.** When in doubt, ask.
 - **Never assume.** If an API returns unexpected data, verify it before writing code around it (I made this mistake claiming "180 categories from M3U" when the M3U only had 7).
+- **Diagnose before the 4th attempt.** Master rules: after 3 failed fix attempts, STOP and build/ask for diagnostic data. The `/api/admin/channels/debug` endpoint was built exactly because three blind search-fix attempts had failed — it cracked the bug in one query.
 
 ## Tech Stack
 - **Framework:** Next.js 14 (App Router)
@@ -73,12 +78,16 @@ src/
 │       ├── orders/…
 │       ├── subscriptions/route.ts
 │       ├── channels/
-│       │   ├── streams/route.ts            # GET all channels (paginated, searchable)
+│       │   ├── categories/route.ts         # Master catalog categories (from Mongo)
+│       │   ├── streams/route.ts            # Master catalog channels — paginated/searchable, per-user playback URLs
 │       │   └── _helpers.ts                 # shared auth helper
 │       ├── sports/events/route.ts          # Upcoming fixtures (Squiggle / TheSportsDB)
-│       ├── playlist/[token]/route.ts       # Personal M3U (live TV proxied from MyBunny, with ⭐ Favorites group prepended)
+│       ├── playlist/[token]/route.ts       # Personal M3U — streamed from master catalog with user's creds swapped in
 │       ├── me/…                             # user prefs, favourites, wallet
-│       └── admin/…
+│       └── admin/
+│           ├── channels/refresh/route.ts   # GET meta / POST refresh-catalog
+│           ├── channels/debug/route.ts     # Admin-only diagnostic for catalog/search
+│           └── …
 ├── components/
 │   ├── DashboardWalletProvider.tsx
 │   ├── DashboardWalletStrip.tsx
@@ -90,7 +99,8 @@ src/
 │   ├── mongodb.ts
 │   ├── solana.ts                    # on-chain balance helpers
 │   ├── mybunny.ts                   # M3U URL builders
-│   ├── mybunny-playlist.ts          # fetch + parse MyBunny's live M3U
+│   ├── mybunny-playlist.ts          # fetch + parse MyBunny's live M3U (legacy — superseded by channel-catalog for most paths)
+│   ├── channel-catalog.ts           # MASTER catalog: refresh + query + per-user URL builder
 │   ├── m3u-parse.ts                 # M3U text → structured entries / back
 │   ├── xtream.ts                    # thin Xtream API wrapper (barely used now)
 │   ├── thesportsdb.ts               # global sports fixtures
@@ -103,10 +113,12 @@ src/
 ```
 
 ## MongoDB Collections
-- **users** — `{ name, email, image, role, createdAt, balanceSOL, balanceBUDJU, autoRenew, disabled, walletAddress, walletVerifiedAt, favoriteStreamIds: number[], playlistToken }`
+- **users** — `{ name, email, image, role, createdAt, balanceSOL, balanceBUDJU, autoRenew, disabled, walletAddress, walletVerifiedAt, favoriteStreamIds: number[], playlistToken, channelPrefs?: { enabledCategoryIds: string[] } }`
 - **orders** — `{ userId, userEmail, plan, months, amount, currency, txHash, status, ... }`
 - **subscriptions** — `{ userId, plan, connections, status, startDate, endDate, credentials: { xtremeHost, xtremeUsername, xtremePassword, collectionSize, channelName } }`
 - **ledger** — credit/debit entries for internal SOL/BUDJU balance
+- **channels** — master catalog. One doc per channel: `{ streamId, name, tvgId, tvgName, tvgLogo, group, streamHost, urlScheme, refreshedAt }`. Indexes: `{streamId:1}`, `{group:1, name:1}` (compound — required for the playlist sort to be fast), `{name:1}`.
+- **catalog_meta** — single doc `{ key: "catalog", refreshedAt, channelCount, categoryCount }` showing when the catalog was last refreshed.
 
 ## Environment Variables
 ```
@@ -124,6 +136,8 @@ NEXT_PUBLIC_SOL_WALLET_ADDRESS=
 NEXT_PUBLIC_BUDJU_WALLET_ADDRESS=
 HELIUS_API_KEY=                     # server-only Solana RPC
 NEXT_PUBLIC_BUDJU_MINT=             # BUDJU SPL mint address
+MYBUNNY_MASTER_USERNAME=             # reseller account — source of the master catalog
+MYBUNNY_MASTER_PASSWORD=             # reseller account — source of the master catalog
 ```
 
 ## Pricing Plans (Option X — 50% margin base)
@@ -162,12 +176,23 @@ Plan purchases are gated behind holding ≥ 1,000,000 BUDJU (admins exempt).
 
 ## Admin
 - Admin: `sfrench71@gmail.com` (auto-assigned role on first login)
-- `/admin` — stats dashboard
+- `/admin` — stats dashboard + **Master Channel Catalog** card (Refresh button, last-refreshed timestamp, channel + category counts)
 - `/admin/users` — all users + on-chain BUDJU balance + credit balance
 - `/admin/users/[id]` — user detail with manual wallet link, promote/demote, balance credit/debit, subscriptions, ledger
 - `/admin/subscriptions` — all subs with filters: all / active / expiring / expired
 - `/admin/subscriptions/[id]` — subscription detail with Xtream credentials form, + N months, resend email, reactivate, mark expired
 - `/admin/orders` and `/admin/orders/[id]` — order review + provisioning flow
+- `/api/admin/channels/refresh` (GET meta / POST refresh) — backing endpoint for the Refresh Catalog button
+- `/api/admin/channels/debug?q=<term>&category=<optional>` — read-only diagnostic that returns raw Mongo query results + a parallel `queryChannels()` run for comparison. Admin-only. Use when search returns unexpected results.
+
+### Refresh Catalog flow
+Admin ticks/unticks categories on the master MyBunny portal (account 12905 / `gfjxcfhq`), then clicks **Refresh Catalog** on `/admin`. This hits `/api/admin/channels/refresh` which:
+1. Fetches MyBunny's M3U using the master env-var creds (25s AbortController timeout)
+2. Parses the M3U with `parseM3u()` → `CatalogChannel[]`
+3. `dropCollection("channels")` (O(1) vs `deleteMany` on 21k docs)
+4. `insertMany(docs, { ordered: false })` — driver parallelises writes
+5. Recreates indexes in parallel (including the compound `{group:1, name:1}` needed for fast playlist generation)
+6. Updates `catalog_meta` with counts + timestamp
 
 ## Commands
 ```bash
