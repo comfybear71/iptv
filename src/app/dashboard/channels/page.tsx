@@ -248,7 +248,7 @@ export default function BrowseChannelsPage() {
           </section>
 
           {/* Category sidebar + Channels grid */}
-          <div className="mt-6 flex gap-4">
+          <div className="mt-6 flex flex-col md:flex-row gap-4">
             {/* Categories sidebar — desktop: always visible, mobile: toggle */}
             <aside className="w-56 flex-shrink-0 md:block hidden">
               <div className="sticky top-20 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
