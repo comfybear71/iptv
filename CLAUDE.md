@@ -9,10 +9,10 @@ ComfyTV is a **friends-and-family IPTV storefront and client portal**. Customers
 The user (site owner) is building this for people who are not tech-savvy. Their friends and family paste-an-M3U flow is too fiddly. They want:
 
 1. **A clean dashboard that shows everything available to them** — live channels, VOD movies, VOD series — searchable, browsable, watchable, without leaving ComfyTV.
-2. **A channel browser** on `/dashboard/channels` with a **categories sidebar** (like MyBunny's portal) + a scrollable channel grid. Every user sees the full **master catalog** (~21k channels / ~36 categories), not just what's ticked on their individual MyBunny sub-account.
-3. **Favourites (♥)** — tap the heart on any channel to pin it. Favourites appear at the top of the user's personal M3U URL under a "⭐ Favorites" group, so their most-watched channels are always one tap away in IPTV Smarters / TiviMate / OTT Navigator too.
-4. **A personal M3U URL** the user can copy into their TV app of choice — this URL is always up to date with their favourites.
-5. **A "How to Watch" page** that walks them through setting up IPTV Smarters / TiviMate / VLC on TV / phone / computer.
+2. **A channel browser** on `/dashboard/channels` with a **categories sidebar** (like MyBunny's portal) + a scrollable channel grid. Every user sees the full **master catalog** (~21k channels / ~36 categories), not just what's ticked on their individual MyBunny sub-account. Each sidebar category shows a `hearted/total` badge (e.g. `Australia 5/490`) with the hearted count in green.
+3. **Hearts (♥) = personal playlist.** Tapping a heart on any channel adds it to the user's personal M3U URL. The M3U contains **only hearted channels** — typically 10-100, not 21k. This keeps the playlist small, fast, and actually usable in IPTV apps (nobody wants to scroll through 21k channels in TiviMate).
+4. **Personal M3U URL card** — shows a live count, a Watch button (webplayer.online), a Copy URL button, and green removable pills (one per hearted channel, `×` to remove). Users can manage their playlist without scrolling through the full catalog.
+5. **A "How to Watch" page** that walks them through setting up IPTV Smarters / TiviMate / VLC on TV / phone / computer. Real IPTV apps > webplayer.online for everyday viewing.
 6. **Sports discovery** at `/dashboard/sports` — pre-curated tiles (AFL, NRL, EPL, UFC, etc.) that surface the relevant channels + upcoming fixtures from neutral sources (Squiggle for AFL, TheSportsDB for global sports).
 7. **VOD Movies + VOD Series** — copy-one-URL experience that plays the whole library in their TV app.
 
@@ -25,6 +25,7 @@ The **master MyBunny account (id 12905 / `gfjxcfhq`)** is the source of truth fo
 - **A category picker that makes the user tick+save before seeing content.** The sidebar is a filter (click to narrow), not a picker.
 - **Anything that forces the user to leave ComfyTV to configure stuff.** The site should feel like a self-contained app.
 - **Per-user MyBunny sub-account tweaks.** Customers shouldn't need anything configured on MyBunny's side beyond having valid credentials. The master catalog + per-user playback URLs handles the rest (confirmed: any valid MyBunny sub-account's creds unlock any stream ID in the master catalog).
+- **A personal M3U that dumps all 21k channels into the user's IPTV app.** Nobody wants to scroll through 21k channels in TiviMate. The personal M3U is **hearted channels only** — small, curated, fast.
 - **Hard dependencies on MyBunny's portal HTML** (anything under `/client/configure.php`, or scraped portal pages). The only MyBunny endpoints we legitimately use are the M3U download URLs:
   - `/client/download.php?u=X&p=Y` — live TV M3U (used once per refresh with master creds, stored in Mongo)
   - `/client/Movies.php?u=X&p=Y&s=N` — VOD Movies M3U
@@ -82,8 +83,11 @@ src/
 │       │   ├── streams/route.ts            # Master catalog channels — paginated/searchable, per-user playback URLs
 │       │   └── _helpers.ts                 # shared auth helper
 │       ├── sports/events/route.ts          # Upcoming fixtures (Squiggle / TheSportsDB)
-│       ├── playlist/[token]/route.ts       # Personal M3U — streamed from master catalog with user's creds swapped in
-│       ├── me/…                             # user prefs, favourites, wallet
+│       ├── playlist/[token]/route.ts       # Personal M3U — contains ONLY the user's hearted channels
+│       ├── me/
+│       │   ├── favorites/route.ts          # GET / POST {streamId, favorite}
+│       │   ├── favorites/detail/route.ts   # GET hearted channels + per-category counts
+│       │   └── …
 │       └── admin/
 │           ├── channels/refresh/route.ts   # GET meta / POST refresh-catalog
 │           ├── channels/debug/route.ts     # Admin-only diagnostic for catalog/search
