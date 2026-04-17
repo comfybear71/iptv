@@ -1,0 +1,10 @@
+stream.comfytv.xyz {
+	reverse_proxy localhost:3000 {
+		flush_interval -1
+	}
+	encode zstd gzip
+	log {
+		output file /var/log/caddy/access.log
+		format console
+	}
+}

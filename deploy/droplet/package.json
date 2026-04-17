@@ -1,0 +1,13 @@
+{
+  "name": "comfytv-stream",
+  "version": "1.0.0",
+  "description": "ComfyTV stream proxy — forwards HMAC-signed URLs to the IPTV upstream.",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
