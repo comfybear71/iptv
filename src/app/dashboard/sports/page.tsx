@@ -542,7 +542,7 @@ function AflRoundGroups({ fixtures }: { fixtures: AflFixture[] }) {
 
   return (
     <div className="mt-4 space-y-3">
-      {rounds.map(({ round, roundname, games }, idx) => {
+      {rounds.map(({ round, roundname, games }) => {
         const isOpen = expandedRounds.has(round);
         return (
           <div key={round}>
