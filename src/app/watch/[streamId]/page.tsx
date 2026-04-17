@@ -12,6 +12,10 @@ interface StreamInfo {
   streamUrl: string;
 }
 
+// Public HLS test stream — used when ?test=1 is on the URL so we can verify
+// the hls.js plumbing independently of our provider's CORS/Cert behaviour.
+const TEST_HLS = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
+
 export default function WatchPage({
   params,
 }: {
@@ -21,8 +25,26 @@ export default function WatchPage({
   const [info, setInfo] = useState<StreamInfo | null>(null);
   const [error, setError] = useState("");
   const [playerError, setPlayerError] = useState("");
+  const [testMode, setTestMode] = useState(false);
 
   useEffect(() => {
+    const search =
+      typeof window !== "undefined" ? window.location.search : "";
+    const isTest = /[?&]test=1\b/.test(search);
+    setTestMode(isTest);
+
+    if (isTest) {
+      setInfo({
+        streamId: 0,
+        name: "HLS test stream (Mux)",
+        tvgName: null,
+        tvgLogo: null,
+        group: "Diagnostics",
+        streamUrl: TEST_HLS,
+      });
+      return;
+    }
+
     (async () => {
       try {
         const res = await fetch(`/api/me/stream/${params.streamId}`, {
@@ -30,15 +52,15 @@ export default function WatchPage({
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-        setInfo(data as StreamInfo);
+        // Use the CORS-safe proxy URL for playback, not the raw provider URL.
+        const proxied = `/api/stream/proxy/${params.streamId}`;
+        setInfo({ ...(data as StreamInfo), streamUrl: proxied });
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : "Failed to load stream");
       }
     })();
   }, [params.streamId]);
 
-  // Attach hls.js (or native HLS on Safari/iOS) to the <video> once we have
-  // the stream URL. Dynamically import hls.js so it only loads in-browser.
   useEffect(() => {
     if (!info?.streamUrl || !videoRef.current) return;
     const video = videoRef.current;
@@ -138,6 +160,14 @@ export default function WatchPage({
           ← Back
         </Link>
       </div>
+
+      {testMode && (
+        <div className="rounded-lg border border-blue-800 bg-blue-900/30 p-3 text-xs text-blue-200">
+          Test mode: streaming a public HLS test file. If this plays, hls.js is
+          wired correctly and any issue with a real channel is upstream
+          (CORS / TLS / hotlink).
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg border border-red-800 bg-red-900/30 p-3 text-sm text-red-300">
