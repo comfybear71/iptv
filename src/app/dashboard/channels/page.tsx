@@ -53,7 +53,6 @@ export default function BrowseChannelsPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [catOpen, setCatOpen] = useState(false); // mobile dropdown
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
 
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -334,64 +333,49 @@ export default function BrowseChannelsPage() {
 
           {/* Category sidebar + Channels grid — stacked below lg (1024px), side-by-side above */}
           <div className="mt-6 flex flex-col lg:flex-row gap-4">
-            {/* Desktop sidebar (lg+): collapsible */}
-            <aside
-              className={`hidden lg:block flex-shrink-0 transition-all ${
-                desktopSidebarOpen ? "w-56" : "w-12"
-              }`}
-            >
+            {/* Desktop sidebar (lg+): always visible */}
+            <aside className="hidden lg:block w-56 flex-shrink-0">
               <div className="sticky top-20 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
-                <div className="border-b border-slate-800 px-3 py-3 flex items-center justify-between gap-2">
-                  {desktopSidebarOpen && (
-                    <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                      <span>📂</span> Categories
-                    </h2>
-                  )}
-                  <button
-                    onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)}
-                    title={desktopSidebarOpen ? "Collapse" : "Expand"}
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
-                  >
-                    {desktopSidebarOpen ? "◀" : "▶"}
-                  </button>
+                <div className="border-b border-slate-800 px-3 py-3">
+                  <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>📂</span> Categories
+                  </h2>
                 </div>
-                {desktopSidebarOpen && (
-                  <div className="max-h-[calc(100vh-10rem)] overflow-y-auto">
+                <div className="max-h-[calc(100vh-10rem)] overflow-y-auto">
+                  <button
+                    onClick={() => { setSelectedCategory(null); setPage(1); }}
+                    className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition ${
+                      selectedCategory === null
+                        ? "bg-purple-600 text-white font-semibold"
+                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    <span>All Channels</span>
+                    <CountBadge
+                      hearted={favorites.size}
+                      total={totalChannels}
+                      selected={selectedCategory === null}
+                    />
+                  </button>
+                  {categories.map((cat) => (
                     <button
-                      onClick={() => { setSelectedCategory(null); setPage(1); }}
+                      key={cat.category_id}
+                      onClick={() => { setSelectedCategory(cat.category_id); setPage(1); }}
                       className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition ${
-                        selectedCategory === null
+                        selectedCategory === cat.category_id
                           ? "bg-purple-600 text-white font-semibold"
                           : "text-slate-300 hover:bg-slate-800 hover:text-white"
                       }`}
                     >
-                      <span>All Channels</span>
+                      <span className="truncate pr-2">{cat.category_name}</span>
                       <CountBadge
-                        hearted={favorites.size}
-                        total={totalChannels}
-                        selected={selectedCategory === null}
+                        hearted={favByCategory[cat.category_id] || 0}
+                        total={cat.count}
+                        selected={selectedCategory === cat.category_id}
                       />
                     </button>
-                    {categories.map((cat) => (
-                      <button
-                        key={cat.category_id}
-                        onClick={() => { setSelectedCategory(cat.category_id); setPage(1); }}
-                        className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition ${
-                          selectedCategory === cat.category_id
-                            ? "bg-purple-600 text-white font-semibold"
-                            : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                        }`}
-                      >
-                        <span className="truncate pr-2">{cat.category_name}</span>
-                        <CountBadge
-                          hearted={favByCategory[cat.category_id] || 0}
-                          total={cat.count}
-                          selected={selectedCategory === cat.category_id}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
             </aside>
 
