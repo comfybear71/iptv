@@ -16,6 +16,8 @@ export interface SportDef {
   id: string;
   label: string;
   emoji: string;
+  /** Optional real logo URL (replaces emoji on the tile when set) */
+  logoUrl?: string;
   blurb: string;
   keywords: string[];
   /** Category-name substrings — any stream whose category name matches
@@ -34,6 +36,7 @@ export const SPORTS: SportDef[] = [
     id: "afl",
     label: "AFL",
     emoji: "🏉",
+    logoUrl: "https://r2.thesportsdb.com/images/media/league/badge/wvx4721525519372.png",
     blurb: "Aussie Rules — Fox Footy, Kayo, 7mate",
     keywords: ["afl", "aussie rules", "fox footy", "afl nation", "afl channel"],
     categoryHints: ["australia", "au sports", "aus sports"],
