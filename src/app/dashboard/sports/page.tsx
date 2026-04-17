@@ -263,12 +263,50 @@ export default function SportsPage() {
                 <div className="mt-4 text-xs text-slate-500">{eventsNote}</div>
               )}
 
-              {/* AFL fixtures (from Squiggle) */}
+                            {/* AFL fixtures - Current round visible by default, later rounds collapsible */}
               {!eventsLoading && !eventsError && aflFixtures.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  {aflFixtures.slice(0, 20).map((fix) => (
-                    <AflFixtureCard key={fix.id} fixture={fix} />
-                  ))}
+                <div className="mt-4 space-y-6">
+                  {(() => {
+                    const rounds = [...new Set(aflFixtures.map(f => f.round))].sort((a, b) => a - b);
+                    const currentRound = rounds[0];
+
+                    return (
+                      <>
+                        {/* Current round - always visible */}
+                        {currentRound && (
+                          <div>
+                            <h3 className="mb-3 text-sm font-semibold text-amber-300 flex items-center gap-2">
+                              Round {currentRound} <span className="text-xs text-slate-400">(Upcoming)</span>
+                            </h3>
+                            <div className="space-y-2">
+                              {aflFixtures
+                                .filter(fix => fix.round === currentRound)
+                                .map((fix) => (
+                                  <AflFixtureCard key={fix.id} fixture={fix} />
+                                ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Later rounds - collapsible, starts closed */}
+                        {rounds.length > 1 && (
+                          <details className="group mt-4">
+                            <summary className="cursor-pointer list-none flex items-center justify-between text-sm font-semibold text-amber-300 hover:text-amber-200 py-1">
+                              <span>Round {rounds[1]} and later ({rounds.length - 1} more rounds)</span>
+                              <span className="text-xs transition-transform group-open:rotate-180">▼</span>
+                            </summary>
+                            <div className="mt-3 space-y-2 pl-2 border-l border-slate-700">
+                              {aflFixtures
+                                .filter(fix => fix.round > currentRound)
+                                .map((fix) => (
+                                  <AflFixtureCard key={fix.id} fixture={fix} />
+                                ))}
+                            </div>
+                          </details>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
