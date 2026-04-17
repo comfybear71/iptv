@@ -389,13 +389,17 @@ function ComputerTab() {
       />
       <AppCard
         emoji="🌐"
-        name="Browser (via HLS player)"
-        pill="Coming soon"
-        pillColor="bg-slate-700 text-slate-300"
+        name="Browser (in-site player)"
+        pill="Best for trying a channel"
+        pillColor="bg-emerald-700 text-emerald-100"
         price="Free"
         devices="Any browser"
-        why="We'll add an in-browser player to ComfyTV soon so you can watch without installing anything. For now, stick with VLC or an app."
-        steps={[]}
+        why="Tap ▶ on any channel in Browse Channels or Sports — the stream opens in an in-site hls.js player, no extra app or tab. For marathon TV sessions on a TV device, TiviMate / IPTV Smarters still win on quality and buffering."
+        steps={[
+          "Open Browse Channels or Sports.",
+          "Tap ▶ on any channel — playback starts inline.",
+          "For TV / Fire Stick / Android boxes use TiviMate or IPTV Smarters with the personal M3U URL from Browse Channels.",
+        ]}
       />
     </div>
   );

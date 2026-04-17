@@ -619,22 +619,14 @@ function ChannelCard({
   isFavorite: boolean;
   onToggleFavorite: () => void;
 }) {
-  // webplayer.online is a playlist viewer, so wrap the stream in a one-entry
-  // M3U served by /api/stream/[token]/[id].m3u. Fallback to the raw stream
-  // URL if we don't have the token yet (token loads async on page mount).
-  const fallbackDirect =
-    stream.url ||
-    `${host.replace(/\/$/, "")}/live/${encodeURIComponent(
-      username
-    )}/${encodeURIComponent(password)}/${stream.stream_id}.m3u8`;
-  const singleChannelM3u = playlistToken
-    ? `/api/stream/${playlistToken}/${stream.stream_id}.m3u`
-    : fallbackDirect;
-  const absoluteM3u =
-    typeof window !== "undefined" && singleChannelM3u.startsWith("/")
-      ? `${window.location.origin}${singleChannelM3u}`
-      : singleChannelM3u;
-  const playerUrl = buildWebPlayerUrl(absoluteM3u);
+  // In-site hls.js player at /watch/[streamId] — no webplayer.online bounce.
+  // Props kept in the signature so other touchpoints (e.g. fallback to an
+  // M3U URL) stay callable without a further refactor.
+  void playlistToken;
+  void host;
+  void username;
+  void password;
+  const watchUrl = `/watch/${stream.stream_id}`;
 
   return (
     <div className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950 p-3">
@@ -683,9 +675,7 @@ function ChannelCard({
         {isFavorite ? "♥" : "♡"}
       </button>
       <a
-        href={playerUrl}
-        target="_blank"
-        rel="noopener noreferrer"
+        href={watchUrl}
         className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-500"
       >
         ▶
