@@ -222,7 +222,16 @@ export default function SportsPage() {
                   <div
                     className={`mb-3 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br text-2xl text-white ${sport.accent}`}
                   >
-                    {sport.emoji}
+                    {sport.logoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={sport.logoUrl}
+                        alt={sport.label}
+                        className="h-8 w-8 object-contain"
+                      />
+                    ) : (
+                      sport.emoji
+                    )}
                   </div>
                   <div className="text-sm font-bold text-white">
                     {sport.label}
@@ -263,13 +272,9 @@ export default function SportsPage() {
                 <div className="mt-4 text-xs text-slate-500">{eventsNote}</div>
               )}
 
-              {/* AFL fixtures (from Squiggle) */}
+              {/* AFL fixtures (from Squiggle) — grouped by round */}
               {!eventsLoading && !eventsError && aflFixtures.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  {aflFixtures.slice(0, 20).map((fix) => (
-                    <AflFixtureCard key={fix.id} fixture={fix} />
-                  ))}
-                </div>
+                <AflRoundGroups fixtures={aflFixtures} />
               )}
 
               {/* Other sports events (from TheSportsDB) */}
@@ -498,6 +503,73 @@ function ChannelTile({
       >
         ▶
       </a>
+    </div>
+  );
+}
+
+function AflRoundGroups({ fixtures }: { fixtures: AflFixture[] }) {
+  const rounds = useMemo(() => {
+    const map = new Map<number, AflFixture[]>();
+    for (const fix of fixtures) {
+      const list = map.get(fix.round) || [];
+      list.push(fix);
+      map.set(fix.round, list);
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([round, games]) => ({ round, roundname: games[0].roundname, games }));
+  }, [fixtures]);
+
+  const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (rounds.length > 0) {
+      setExpandedRounds(new Set([rounds[0].round]));
+    }
+  }, [rounds]);
+
+  const toggle = (round: number) => {
+    setExpandedRounds((prev) => {
+      const next = new Set(prev);
+      if (next.has(round)) {
+        next.delete(round);
+      } else {
+        next.add(round);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className="mt-4 space-y-3">
+      {rounds.map(({ round, roundname, games }, idx) => {
+        const isOpen = expandedRounds.has(round);
+        return (
+          <div key={round}>
+            <button
+              onClick={() => toggle(round)}
+              className="flex w-full items-center justify-between rounded-xl border border-amber-900/40 bg-slate-950 px-4 py-3 text-left transition hover:bg-slate-900"
+            >
+              <span className="text-sm font-bold text-white">
+                {roundname}
+                <span className="ml-2 text-xs font-normal text-slate-400">
+                  ({games.length} game{games.length === 1 ? "" : "s"})
+                </span>
+              </span>
+              <span className="text-slate-400">
+                {isOpen ? "▲" : "▼"}
+              </span>
+            </button>
+            {isOpen && (
+              <div className="mt-2 space-y-2">
+                {games.map((fix) => (
+                  <AflFixtureCard key={fix.id} fixture={fix} />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
