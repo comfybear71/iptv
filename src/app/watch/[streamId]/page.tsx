@@ -144,8 +144,14 @@ export default function WatchPage({
           {
             enableWorker: false,
             lazyLoad: false,
-            liveBufferLatencyChasing: true,
-            stashInitialSize: 128,
+            // Don't aggressively chase the live edge — prioritise smooth
+            // playback over sub-second latency. Viewers don't care about
+            // being 5 s behind live; they care about stutter.
+            liveBufferLatencyChasing: false,
+            // Bigger initial buffer → smoother startup on first play.
+            stashInitialSize: 384,
+            // Release already-played buffers so long sessions don't eat RAM.
+            autoCleanupSourceBuffer: true,
           }
         );
         destroy = () => {
