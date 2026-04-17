@@ -38,7 +38,7 @@ export const SPORTS: SportDef[] = [
     keywords: ["afl", "aussie rules", "fox footy", "afl nation", "afl channel"],
     categoryHints: ["australia", "au sports", "aus sports"],
     accent: "from-red-700 to-orange-700",
-    tsdbLeagueIds: ["4449"],
+    tsdbLeagueIds: ["4456"],
     channelHint: "Fox Footy HD / Kayo AFL",
   },
   {
