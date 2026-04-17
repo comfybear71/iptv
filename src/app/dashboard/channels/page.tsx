@@ -48,6 +48,7 @@ export default function BrowseChannelsPage() {
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [subsLoading, setSubsLoading] = useState(true);
   const [playlistUrl, setPlaylistUrl] = useState("");
+  const [playlistToken, setPlaylistToken] = useState("");
   const [copied, setCopied] = useState(false);
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -87,6 +88,9 @@ export default function BrowseChannelsPage() {
         setSubs(subsData.subscriptions || []);
         if (typeof prefsData.playlistUrl === "string") {
           setPlaylistUrl(prefsData.playlistUrl);
+        }
+        if (typeof prefsData.playlistToken === "string") {
+          setPlaylistToken(prefsData.playlistToken);
         }
       } finally {
         setSubsLoading(false);
@@ -505,6 +509,7 @@ export default function BrowseChannelsPage() {
                       host={host}
                       username={creds!.xtremeUsername!}
                       password={creds!.xtremePassword!}
+                      playlistToken={playlistToken}
                       isFavorite={favorites.has(stream.stream_id)}
                       onToggleFavorite={() => toggleFavorite(stream.stream_id)}
                     />
@@ -602,6 +607,7 @@ function ChannelCard({
   host,
   username,
   password,
+  playlistToken,
   isFavorite,
   onToggleFavorite,
 }: {
@@ -609,15 +615,26 @@ function ChannelCard({
   host: string;
   username: string;
   password: string;
+  playlistToken: string;
   isFavorite: boolean;
   onToggleFavorite: () => void;
 }) {
-  const streamUrl =
+  // webplayer.online is a playlist viewer, so wrap the stream in a one-entry
+  // M3U served by /api/stream/[token]/[id].m3u. Fallback to the raw stream
+  // URL if we don't have the token yet (token loads async on page mount).
+  const fallbackDirect =
     stream.url ||
     `${host.replace(/\/$/, "")}/live/${encodeURIComponent(
       username
     )}/${encodeURIComponent(password)}/${stream.stream_id}.m3u8`;
-  const playerUrl = buildWebPlayerUrl(streamUrl);
+  const singleChannelM3u = playlistToken
+    ? `/api/stream/${playlistToken}/${stream.stream_id}.m3u`
+    : fallbackDirect;
+  const absoluteM3u =
+    typeof window !== "undefined" && singleChannelM3u.startsWith("/")
+      ? `${window.location.origin}${singleChannelM3u}`
+      : singleChannelM3u;
+  const playerUrl = buildWebPlayerUrl(absoluteM3u);
 
   return (
     <div className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950 p-3">

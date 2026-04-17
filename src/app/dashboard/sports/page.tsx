@@ -51,6 +51,7 @@ export default function SportsPage() {
 
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [subsLoading, setSubsLoading] = useState(true);
+  const [playlistToken, setPlaylistToken] = useState("");
 
   const [categories, setCategories] = useState<CategoryForFilter[]>([]);
   const [allStreams, setAllStreams] = useState<StreamForFilter[]>([]);
@@ -75,15 +76,20 @@ export default function SportsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [subsRes, catsRes] = await Promise.all([
+        const [subsRes, catsRes, prefsRes] = await Promise.all([
           fetch("/api/subscriptions"),
           fetch("/api/channels/categories"),
+          fetch("/api/me/channel-prefs"),
         ]);
         const subsData = await subsRes.json().catch(() => ({}));
         const catsData = await catsRes.json().catch(() => ({}));
+        const prefsData = await prefsRes.json().catch(() => ({}));
         setSubs(subsData.subscriptions || []);
         if (Array.isArray(catsData.categories)) {
           setCategories(catsData.categories);
+        }
+        if (typeof prefsData.playlistToken === "string") {
+          setPlaylistToken(prefsData.playlistToken);
         }
       } finally {
         setSubsLoading(false);
@@ -407,6 +413,7 @@ export default function SportsPage() {
                       host={host}
                       username={creds!.xtremeUsername!}
                       password={creds!.xtremePassword!}
+                      playlistToken={playlistToken}
                       isFavorite={favorites.has(stream.stream_id)}
                       onToggleFavorite={() =>
                         toggleFavorite(stream.stream_id)
@@ -575,6 +582,7 @@ function ChannelTile({
   host,
   username,
   password,
+  playlistToken,
   isFavorite,
   onToggleFavorite,
 }: {
@@ -582,15 +590,23 @@ function ChannelTile({
   host: string;
   username: string;
   password: string;
+  playlistToken: string;
   isFavorite: boolean;
   onToggleFavorite: () => void;
 }) {
-  const streamUrl =
+  const fallbackDirect =
     stream.url ||
     `${host.replace(/\/$/, "")}/live/${encodeURIComponent(
       username
     )}/${encodeURIComponent(password)}/${stream.stream_id}.m3u8`;
-  const playerUrl = buildWebPlayerUrl(streamUrl);
+  const singleChannelM3u = playlistToken
+    ? `/api/stream/${playlistToken}/${stream.stream_id}.m3u`
+    : fallbackDirect;
+  const absoluteM3u =
+    typeof window !== "undefined" && singleChannelM3u.startsWith("/")
+      ? `${window.location.origin}${singleChannelM3u}`
+      : singleChannelM3u;
+  const playerUrl = buildWebPlayerUrl(absoluteM3u);
 
   return (
     <div className="flex items-center gap-3 overflow-hidden rounded-xl border border-slate-800 bg-slate-950 p-3">
