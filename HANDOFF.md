@@ -23,26 +23,26 @@ Users then curate which **channels** they want to watch by hearting them in Brow
 - Per-user MyBunny sub-account configuration (customers shouldn't need to configure anything on MyBunny).
 - A personal M3U that dumps all 21k channels into the user's IPTV app (makes IPTV apps crawl; hearts replace it).
 
-## Current state (2026-04-16 late evening)
+## Current state (2026-04-17 late night)
 
 ### Working on production (verified on admin + dad's device)
 
-Everything from the previous state list, plus new as of today:
-
 - **Master channel catalog** — `channels` collection in Mongo stores all ~21k channels from the master account. Every user sees the same catalog. Refresh on demand via `/admin`.
 - **Per-user playback URLs** — when a user hits play, we swap *their* credentials into the stream URL pattern (`http://turbobunny.net/{user}/{pass}/{streamId}`). Verified: any valid MyBunny sub-account's creds unlock any stream ID in the master catalog.
-- **Categories sidebar on `/dashboard/channels`** — desktop: sticky, collapsible; tablet/mobile: dropdown above the grid. Each row shows `hearted/total` (e.g. `Australia 5/490`) with the hearted portion in green.
-- **Dashboard sidebar is collapsible** on desktop (chevron in header toggles).
+- **Categories sidebar on `/dashboard/channels`** — desktop: always-visible; tablet/mobile: dropdown above the grid. Each row shows `hearted/total` (e.g. `Australia 5/490`) with the hearted portion in green.
 - **Channel search** works across `name`, `tvg-name`, `tvg-id` via MongoDB `$or`. Client `fetch()` uses `cache: "no-store"` so Vercel edge doesn't serve stale results.
 - **Personal M3U = hearts only** — `/api/playlist/[token]` returns only the user's hearted channels. Typically 10-100 channels = small, fast, works everywhere (webplayer.online, TiviMate, IPTV Smarters, VLC). Empty state = valid M3U with a friendly hint comment.
-- **Removable pills on the playlist card** — each hearted channel shows as a green pill with `×`. Clicking `×` unhearts the channel → pill disappears, sidebar counts update, M3U contents change.
+- **Removable pills on the playlist card** — each hearted channel shows as a green pill with `×`. Clicking `×` unhearts the channel.
+- **Sports hub Next: previews** — AFL and UFC tiles show an at-a-glance "Next: fixture · day" badge fetched on page mount, so users see what's coming without clicking in.
+- **AFL channel filter** — tightened; returns ~10-20 relevant channels (7AFL, WAFL, Fox Footy, Kayo AFL) instead of 100+ unrelated AU channels.
+- **In-site live TV playback 🎬 (shipped 2026-04-17)** — tap ▶ on any channel in Browse Channels or Sports, the stream plays **inline** at `/watch/[streamId]` via `mpegts.js`. Backed by a self-hosted Caddy + Node proxy on a DigitalOcean droplet at `stream.comfytv.xyz`. 60-second HMAC-signed URLs minted by `/api/me/stream/[streamId]`. Graceful VLC / personal-M3U / setup-guide fallback on iOS Safari and when the droplet isn't reachable. Full architecture + runbook in CLAUDE.md.
 - **Admin debug endpoint** `/api/admin/channels/debug?q=...&category=...` — read-only diagnostic returning raw Mongo query results + a parallel `queryChannels()` run for comparison.
 
 ### What's broken / pending
 
-- AFL sport events on `/dashboard/sports` currently show English League 1 soccer because we used the wrong TheSportsDB league ID. Squiggle fix drafted but never merged cleanly.
+- **Hearts toggle refresh bug** — ♥ click on Browse Channels fires the mutation but category-count badges + hearted-pill strip don't re-render until a full page reload. Suspect optimistic update in `useFavorites` + `favByCategory` reconciliation after POST.
+- **UFC fight-card expand** — currently wired to TheSportsDB's `strResult`, which is empty for upcoming fixtures on the free tier. Either drop the expand UI or replace the data source with Wikipedia's REST API (see Queued).
 - Sports Phase C work (channel ↔ event matching, remind-me, live-now badges) deferred.
-- In-browser HLS player (so users can watch inside ComfyTV without webplayer.online) — not started.
 - EPG "Now Playing" badges on channel tiles — not started.
 - Stripe checkout path (alternative to SOL/BUDJU for non-crypto customers) — not started.
 
@@ -76,43 +76,20 @@ Built `/api/admin/channels/debug?q=...` that returns (a) an inline raw Mongo que
 
 ### Queued (top of the next session's list)
 
-**1. In-site playback — pick up where this session left off.** The big finding from 2026-04-17 is that the provider (`turbobunny.net`) streams **progressive MPEG-TS over HTTP**, not HLS. Everything below was tried and the lessons are recorded so the next Claude doesn't re-run them:
+**1. Hearts toggle needs page refresh on Browse Channels.** ♥ click fires the mutation but category-count badges + hearted-pill strip don't re-render until reload. Suspect optimistic update in `useFavorites` + `favByCategory` state aren't reconciling after POST. Small, self-contained bug — good first task for a fresh session.
 
-- ❌ **Don't** use the `/live/{u}/{p}/{id}.m3u8` Xtream path — turbobunny returns HTTP 400 for that shape. The verified URL pattern is the bare `{scheme}://{host}/{user}/{pass}/{streamId}` (no `/live/`, no extension), already implemented in `buildPerUserStreamUrl`. Leave it.
-- ❌ **Don't** expect webplayer.online to auto-play a one-entry M3U. It receives 17 MB+ and times out after 30 s when given a single-channel M3U from `/api/stream/[token]/[id]`. It **does** work for multi-entry playlists (the personal M3U), because the user picks a channel from the list — that UX already ships and should stay.
-- ❌ **Don't** point hls.js at the raw stream URL. Direct browser fetch to `turbobunny.net` fails with `ERR_CONNECTION_CLOSED` — a stack of three reasons: no CORS headers, mixed content (HTTPS page → HTTP stream), and the upstream redirects to an IP whose TLS cert is bound to the hostname.
-- ❌ **Don't** try to fix the above with the Vercel serverless proxy at `/api/stream/proxy/[streamId]` (already on branch `claude/setup-iptv-project-Tqyec`). It works for short HLS playlists/segments but hits **Vercel's 60 s function timeout** for continuous MPEG-TS and dies mid-stream. Logs show `Vercel Runtime Timeout Error: Task timed out after 60 seconds`. Keep the file as reference but it is not a shipping solution.
-- ✅ **What works today**: `/watch/[id]?test=1` playing the public Mux HLS test stream via hls.js — confirms the player scaffolding is healthy. Personal M3U via webplayer.online or VLC / TiviMate / IPTV Smarters also plays the provider's progressive TS streams correctly.
+**2. UFC fight-card expand** — two paths, pick one:
+  - **Drop it.** TheSportsDB's free tier has empty `strResult` / `strDescriptionEN` for upcoming UFC events and `lookupevent.php` is stubbed (returns Liverpool vs Swansea 2014 for any ID on key `3`). Expand shows nothing useful. Easiest: remove the expandable UI in `src/app/dashboard/sports/page.tsx`.
+  - **Wire it to Wikipedia REST API.** Structured fight-card tables on every announced UFC event, e.g. `https://en.wikipedia.org/api/rest_v1/page/html/UFC_Fight_Night:_Burns_vs._Malott`. `strEvent` from TheSportsDB maps cleanly to a Wikipedia title slug — parse the first `<table class="toccolours">` for fights. ~50 lines of server-side parser + lazy fetch on expand.
 
-**Recommended architecture (verified plan, not built yet):**
+**3. Tuning for the in-site player (minor).** Already-working playback buffers briefly on first start. Two cheap tweaks:
+  - `src/app/watch/[streamId]/page.tsx` — bump mpegts.js `stashInitialSize` from 128 → 256 or 384 KB for a bigger head-start buffer.
+  - `/etc/comfytv-stream/.env` on the droplet — leave as-is, but consider upgrading the $6 droplet to $12 (2 GB RAM) if concurrent viewers climb past 3-5.
 
-```
-Browser → comfytv.xyz           (HTTPS, Next.js on Vercel — no change)
-Browser → stream.comfytv.xyz    (HTTPS, Caddy on user's DigitalOcean droplet)
-Droplet → turbobunny.net        (HTTP, server-to-server, no CORS/TLS barriers)
-```
-
-Concrete pieces:
-
-- **Droplet (user has DO droplets available):**
-  - Caddy (auto Let's Encrypt), reverse-proxy rule for `stream.comfytv.xyz/<signed-token>/<streamId>` → `http://turbobunny.net/{user}/{pass}/{streamId}`.
-  - A tiny HMAC signature verifier (either a Caddy plugin or a ~30-line Node service). Shared secret in env var.
-  - No 60 s timeout, no memory cap, works indefinitely for live TV.
-- **Next.js changes:**
-  - Swap `hls.js` → **`mpegts.js`** in `src/app/watch/[streamId]/page.tsx` (dynamic import; Safari/iOS fallback via native `<video>` if `mpegts.js` can't play — though Safari may need MSE polyfill).
-  - `/api/me/stream/[streamId]` returns a **short-lived HMAC-signed URL** pointing at `stream.comfytv.xyz` instead of the raw turbobunny URL. Signature covers `{streamId, userId, expiry}` with `STREAM_PROXY_SECRET`.
-  - Delete (or keep with a "superseded" docstring) the Vercel serverless proxy at `src/app/api/stream/proxy/[streamId]/route.ts`.
-  - New env vars: `STREAM_PROXY_HOST`, `STREAM_PROXY_SECRET` (shared with droplet).
-- **DNS**: A record `stream.comfytv.xyz` → droplet IP.
-- **Code estimate**: ~80 lines Next.js + ~30 lines droplet service + ~15 lines Caddyfile.
-
-Feature-flag it (`ENABLE_INSITE_PLAYER=true`) so rollout can be reverted without redeploy. Keep the "Open in VLC" / "Copy URL" / personal-M3U paths as fallback UX.
-
-**2. Hearts toggle needs page refresh on Browse Channels** (reported 2026-04-17). ♥ click fires the mutation but category-count badges + hearted-pill strip don't re-render until reload. Suspect optimistic update in `useFavorites` + `favByCategory` state aren't reconciling after POST.
-
-**3. Drop the UFC fight-card expand.** TheSportsDB's free tier has empty `strResult` / `strDescriptionEN` for upcoming UFC events and `lookupevent.php` is stubbed (returns Liverpool vs Swansea 2014 for any ID on key `3`). The expand shows nothing useful on the currently-visible fixtures. Either remove the expand or wire it to Wikipedia — see below.
-
-**4. UFC fight-card expand via Wikipedia REST API** (replacement for #3). Wikipedia has structured fight-card tables on every announced UFC event, e.g. `https://en.wikipedia.org/api/rest_v1/page/html/UFC_Fight_Night:_Burns_vs._Malott`. `strEvent` from TheSportsDB maps cleanly to a Wikipedia title slug — parse the first `<table class="toccolours">` for fights. ~50 lines of server-side parser + lazy fetch on expand.
+**4. Monitoring for the droplet.** Currently unmonitored. Quick wins:
+  - Point UptimeRobot (or similar) at `https://stream.comfytv.xyz/health` — alerts on downtime.
+  - Weekly `journalctl -u comfytv-stream` glance for error patterns.
+  - Optional: wire a tiny `/api/admin/stream-proxy-health` endpoint so the `/admin` page shows proxy status.
 
 **5. Other queued:**
 - Fix AFL events source (swap to Squiggle API — code exists in a prior branch, needs a clean PR).
@@ -120,13 +97,16 @@ Feature-flag it (`ENABLE_INSITE_PLAYER=true`) so rollout can be reverted without
 - Phase C sports work: channel ↔ event matching, "remind me", live-now badges.
 - EPG "Now Playing" badges on channel tiles.
 
-### Recently completed (this session)
+### Recently completed
 - v1.3.x: Category sidebar on Browse Channels; removed redundant Movies/TV Series tiles.
 - v1.4.0: Master channel catalog + admin refresh button.
 - v1.4.x patches: Refresh perf (dropCollection + ordered:false); category sidebar UX (lg breakpoint, collapsible); main dashboard sidebar collapsible; `$or` search + tvg-id; force-dynamic; debug endpoint; `cache:"no-store"` (the search bug killer).
 - v1.4.7: Streaming M3U + compound index + projection (the personal M3U speed fix — later superseded by the hearts-only model).
 - v1.5.0: Personal M3U = hearts only. Users curate their playlist by tapping ♥. Empty state handled with a friendly hint comment in the M3U.
 - v1.5.1: Hearted-count badges in the sidebar (`Australia 5/490` with green hearted count) + removable pills on the playlist card (each hearted channel as a pill with `×` to unheart).
+- v1.6.x: Sports tile "Next: …" previews (AFL + UFC), tighter AFL filter, always-on desktop categories sidebar.
+- v1.7.x: In-site HLS player scaffolding + test mode (`/watch/[id]?test=1`) + Vercel serverless proxy (kept only as reference; not used on the shipping path).
+- **v1.8.0 (the big one): In-site MPEG-TS live TV via droplet proxy.** DigitalOcean droplet (`stream.comfytv.xyz`) running Caddy + a tiny Node HMAC-verifier, `mpegts.js` in the browser, 60-second signed URLs, graceful VLC / personal-M3U fallbacks. Shipped 2026-04-17.
 
 ## Session Log
 
@@ -171,10 +151,25 @@ Final diagnosis (verified by inspecting the stream URL directly in a browser —
 
 **Rule 4 note for next Claude**: I burned through the 3-attempt limit and then some. If you hit a dead end on in-site playback, **stop and audit the assumption stack** (URL format? content-type? browser block? infra cap?) before another code change. The test URL (`/watch/anything?test=1`) and the raw-URL-in-address-bar trick are the fastest ways to isolate which layer is broken.
 
+### 2026-04-17 late night — In-site live TV playback 🎬 SHIPPED
+
+After yesterday's three failed in-site playback attempts and the diagnostic breakthrough that the provider streams **progressive MPEG-TS over HTTP**, we pivoted to the architecture the earlier session recommended and it landed on the first try:
+
+- **Branch `claude/droplet-player-v1` (merged as PR #55)** — added `deploy/droplet/` with a one-shot installer + tiny Node proxy + Caddyfile + systemd unit, plus `src/lib/stream-token.ts` (HMAC sign/verify) and reworked `src/app/watch/[streamId]/page.tsx` to use `mpegts.js` (with `hls.js` kept only for `?test=1`). `/api/me/stream/[streamId]` now returns both the raw upstream URL (for VLC copy) and an HMAC-signed 60-second proxy URL. Feature-flagged behind `ENABLE_DROPLET_PLAYER=1` so rollout was zero-risk before the droplet was online.
+- **Droplet** — new $6/mo 1 GB Sydney droplet at `170.64.144.109`, `stream.comfytv.xyz` A record pointing at it, one `DOMAIN=stream.comfytv.xyz bash setup.sh` and Caddy auto-issued a Let's Encrypt cert within seconds. Three env vars (`ENABLE_DROPLET_PLAYER=1`, `STREAM_PROXY_HOST`, `STREAM_PROXY_SECRET`) into Vercel, redeploy, done.
+- **Result** — tap ▶ on any real channel → Rick and Morty playing inline inside ComfyTV. No webplayer.online bounce, no 30s timeouts, no CORS/TLS errors. Mild first-start buffering, nothing a bigger stashInitialSize or a $12 droplet can't smooth out.
+
+**Lessons that stuck across sessions**
+- The test-stream diagnostic (`/watch/anything?test=1` with a public Mux HLS) proved its worth: confirmed the player was healthy before we started touching provider-specific wiring. Saved hours of false trails.
+- Rule 6 saved us once: the original droplet the user pointed at was tagged `budju-trader`; we spun up a fresh one instead of risking a live trading stack.
+- Vercel serverless is not a streaming host; this is a permanent architectural fact, not a configurable limit.
+
+PR #55 closes this out. The droplet is the shipping infrastructure. Infrastructure to consider later: horizontal scale (load-balanced pair of droplets), monitoring (UptimeRobot on `/health`), per-user bandwidth logging.
+
 ### Outstanding
-- In-site MPEG-TS playback via droplet proxy (plan in Queued #1).
 - Hearts-toggle refresh bug on Browse Channels.
-- UFC fight-card expand via Wikipedia (or drop it — TheSportsDB can't supply data).
+- UFC fight-card expand — drop or replace with Wikipedia REST API.
 - Squiggle AFL fix.
 - Stripe checkout path.
 - EPG "Now Playing" badges.
+- In-site player polish (buffer tuning, droplet monitoring).
