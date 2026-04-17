@@ -80,6 +80,7 @@ Built `/api/admin/channels/debug?q=...` that returns (a) an inline raw Mongo que
 - Phase C sports work: channel ↔ event matching, "remind me", live-now badges.
 - In-browser HLS player (hls.js) so users can watch inside ComfyTV without webplayer.online.
 - EPG "Now Playing" badges on channel tiles.
+- **UFC fight-card expand via Wikipedia REST API.** TheSportsDB's free tier (key `3`) doesn't populate `strResult` / `strDescriptionEN` for upcoming UFC events, and `lookupevent.php` is stubbed (always returns Liverpool vs Swansea 2014 regardless of ID). Wikipedia has structured fight-card tables on every announced UFC event (e.g. `https://en.wikipedia.org/api/rest_v1/page/html/UFC_Fight_Night:_Burns_vs._Malott`). `strEvent` from TheSportsDB maps cleanly to a Wikipedia title slug — parse the first `<table class="toccolours">` for fights. ~50 lines of server-side parser + lazy fetch on card expand.
 
 ### Recently completed (this session)
 - v1.3.x: Category sidebar on Browse Channels; removed redundant Movies/TV Series tiles.

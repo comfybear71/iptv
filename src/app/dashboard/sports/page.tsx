@@ -22,8 +22,6 @@ interface TsdbEvent {
   strTime: string | null;
   strTimestamp: string | null;
   strVenue: string | null;
-  strResult: string | null;
-  strDescriptionEN: string | null;
 }
 
 interface AflFixture {
@@ -446,8 +444,6 @@ export default function SportsPage() {
 }
 
 function EventCard({ event }: { event: TsdbEvent }) {
-  const [expanded, setExpanded] = useState(false);
-
   const when = useMemo(() => {
     const ts =
       event.strTimestamp ||
@@ -473,30 +469,9 @@ function EventCard({ event }: { event: TsdbEvent }) {
       ? `${event.strHomeTeam} vs ${event.strAwayTeam}`
       : event.strEvent;
 
-  const fights = useMemo(() => {
-    if (!event.strResult) return [];
-    return event.strResult
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const parts = line.split(/\t+/).map((p) => p.trim()).filter(Boolean);
-        return parts;
-      })
-      .filter((parts) => parts.length > 0);
-  }, [event.strResult]);
-
-  const hasDetail = fights.length > 0 || !!event.strDescriptionEN;
-
   return (
-    <div className="overflow-hidden rounded-xl border border-amber-900/40 bg-slate-950">
-      <button
-        type="button"
-        onClick={() => hasDetail && setExpanded((v) => !v)}
-        className={`flex w-full items-start gap-3 p-3 text-left ${
-          hasDetail ? "hover:bg-slate-900" : "cursor-default"
-        }`}
-      >
+    <div className="overflow-hidden rounded-xl border border-amber-900/40 bg-slate-950 p-3">
+      <div className="flex items-start gap-3">
         <div className="flex-shrink-0 rounded-lg bg-amber-900/40 px-3 py-2 text-center">
           <div className="text-[10px] uppercase tracking-widest text-amber-300">
             {when.date}
@@ -516,56 +491,7 @@ function EventCard({ event }: { event: TsdbEvent }) {
             </div>
           )}
         </div>
-        {hasDetail && (
-          <span className="flex-shrink-0 text-slate-400">
-            {expanded ? "▲" : "▼"}
-          </span>
-        )}
-      </button>
-
-      {expanded && hasDetail && (
-        <div className="border-t border-amber-900/40 bg-slate-950 px-3 py-3">
-          {fights.length > 0 && (
-            <>
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-amber-300">
-                Fight Card
-              </div>
-              <ul className="space-y-1.5">
-                {fights.map((parts, i) => (
-                  <li
-                    key={i}
-                    className="rounded-md border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-[11px] text-slate-200"
-                  >
-                    {parts.length >= 2 ? (
-                      <>
-                        <span className="font-semibold text-white">
-                          {parts[0]}
-                        </span>
-                        <span className="mx-2 text-amber-400">vs</span>
-                        <span className="font-semibold text-white">
-                          {parts[1]}
-                        </span>
-                        {parts.slice(2).length > 0 && (
-                          <span className="ml-2 text-slate-400">
-                            · {parts.slice(2).join(" · ")}
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      <span>{parts[0]}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {fights.length === 0 && event.strDescriptionEN && (
-            <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-300">
-              {event.strDescriptionEN}
-            </p>
-          )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
