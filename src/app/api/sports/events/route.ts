@@ -3,7 +3,8 @@ import { SPORTS } from "@/lib/sports";
 import { fetchEventsForLeagues } from "@/lib/thesportsdb";
 import { fetchAflFixtures } from "@/lib/squiggle";
 
-export const revalidate = 3600; // 1 hour — fixtures change slowly
+export const revalidate = 0;
+export const dynamic = "force-dynamic";
 
 // GET /api/sports/events?sportId=afl
 // Returns upcoming events for the requested sport.

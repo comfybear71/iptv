@@ -55,6 +55,7 @@ async function fetchTsdb<T>(
 ): Promise<T> {
   const res = await fetch(url, {
     next: { revalidate: revalidateSec },
+    cache: "no-store",
     headers: { "User-Agent": "ComfyTV/1.0 (+https://comfytv.xyz)" },
   });
   if (!res.ok) throw new Error(`TheSportsDB ${res.status}`);
@@ -69,16 +70,27 @@ export async function fetchNextEventsForLeague(
   const year = now.getFullYear();
   const todayStr = now.toISOString().slice(0, 10);
 
-  // eventsseason.php works on the free tier; eventsnextleague.php is broken
-  // (returns English League 1 soccer regardless of league ID).
-  // Try current year first, fall back to "YYYY-1-YYYY" season format
-  // (used by leagues like EPL that span two calendar years).
-  let events = await fetchSeasonEvents(leagueId, String(year));
-  if (events.length === 0) {
-    events = await fetchSeasonEvents(leagueId, `${year - 1}-${year}`);
+  // eventsseason.php works on the free tier; eventsnextleague.php is broken.
+  // Different leagues use different season formats, so we try all three:
+  //   "2026"       — UFC, NRL, F1, ATP (calendar-year leagues)
+  //   "2025-2026"  — EPL, Champions League, La Liga, NBA (cross-year)
+  //   "2025"       — NFL, PGA (season started prev year, ends this year)
+  const seasonFormats = [
+    String(year),
+    `${year - 1}-${year}`,
+    String(year - 1),
+  ];
+
+  let allEvents: TsdbEvent[] = [];
+  for (const season of seasonFormats) {
+    const events = await fetchSeasonEvents(leagueId, season);
+    if (events.length > 0) {
+      allEvents = events;
+      break;
+    }
   }
 
-  return events
+  return allEvents
     .filter((e) => e.dateEvent && e.dateEvent >= todayStr)
     .sort((a, b) => {
       const ta = a.strTimestamp || `${a.dateEvent}T${a.strTime || "00:00:00"}`;
