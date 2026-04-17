@@ -7,15 +7,20 @@ import {
   CatalogChannel,
   CHANNELS_COLLECTION,
 } from "@/lib/channel-catalog";
+import { buildProxyStreamUrl } from "@/lib/stream-token";
 
 export const revalidate = 0;
 export const dynamic = "force-dynamic";
 
 // GET /api/me/stream/{streamId}
 //
-// Session-authenticated lookup for the in-site hls.js player. Returns the
-// stream URL (with the user's credentials swapped in) plus enough channel
-// metadata to render a "Now playing" header.
+// Session-authenticated lookup for the in-site player. Returns a short-lived
+// HMAC-signed proxy URL (playable inline via mpegts.js through the droplet
+// proxy) plus the raw upstream URL as a fallback for VLC / copy-to-IPTV-app.
+//
+// The droplet-proxy path is gated by env var ENABLE_DROPLET_PLAYER=1 +
+// STREAM_PROXY_HOST + STREAM_PROXY_SECRET. If those aren't set the client
+// falls back to the "open in VLC / use the personal M3U" UX.
 export async function GET(
   _req: NextRequest,
   ctx: { params: { streamId: string } }
@@ -74,11 +79,27 @@ export async function GET(
     return NextResponse.json({ error: "Channel not found" }, { status: 404 });
   }
 
-  const streamUrl = buildPerUserStreamUrl(
+  const upstreamUrl = buildPerUserStreamUrl(
     channel,
     creds.xtremeUsername,
     creds.xtremePassword
   );
+
+  // If the droplet proxy is wired up, mint a signed URL the browser can
+  // fetch directly via mpegts.js. Otherwise the client has no in-browser
+  // playback path and will show VLC / M3U fallbacks.
+  const enableDroplet = process.env.ENABLE_DROPLET_PLAYER === "1";
+  const proxyHost = process.env.STREAM_PROXY_HOST;
+  const proxySecret = process.env.STREAM_PROXY_SECRET;
+  const proxyUrl =
+    enableDroplet && proxyHost && proxySecret
+      ? buildProxyStreamUrl({
+          upstreamUrl,
+          proxyHost,
+          secret: proxySecret,
+          ttlSeconds: 60,
+        })
+      : null;
 
   return NextResponse.json({
     streamId: channel.streamId,
@@ -86,6 +107,10 @@ export async function GET(
     tvgName: channel.tvgName || null,
     tvgLogo: channel.tvgLogo || null,
     group: channel.group || null,
-    streamUrl,
+    // Raw upstream URL — direct MPEG-TS from the provider. Works in VLC /
+    // TiviMate / IPTV Smarters. Not playable directly in a browser.
+    streamUrl: upstreamUrl,
+    // Proxy URL for in-browser playback. Null if the droplet isn't wired up.
+    proxyUrl,
   });
 }
