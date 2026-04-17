@@ -245,7 +245,12 @@ export async function getAllChannels(): Promise<CatalogChannel[]> {
 
 /**
  * Build the per-user playback URL by swapping the user's creds into the
- * stream URL pattern: {scheme}://{host}/{user}/{pass}/{streamId}
+ * stream URL pattern: {scheme}://{host}/live/{user}/{pass}/{streamId}.m3u8
+ *
+ * Use the full Xtream HLS path (/live/.../ID.m3u8) so each URL returns a
+ * single-stream playlist (~1KB). The bare form {host}/{user}/{pass}/{id}
+ * caused webplayer.online to receive the full master M3U (~6MB) and time
+ * out, because that path isn't a single-stream endpoint.
  */
 export function buildPerUserStreamUrl(
   channel: Pick<CatalogChannel, "streamHost" | "urlScheme" | "streamId">,
@@ -254,5 +259,5 @@ export function buildPerUserStreamUrl(
 ): string {
   const u = encodeURIComponent(username);
   const p = encodeURIComponent(password);
-  return `${channel.urlScheme}://${channel.streamHost}/${u}/${p}/${channel.streamId}`;
+  return `${channel.urlScheme}://${channel.streamHost}/live/${u}/${p}/${channel.streamId}.m3u8`;
 }

@@ -39,7 +39,7 @@ export const SPORTS: SportDef[] = [
     logoUrl: "https://r2.thesportsdb.com/images/media/league/badge/wvx4721525519372.png",
     blurb: "Aussie Rules — Fox Footy, Kayo, 7mate",
     keywords: ["afl", "aussie rules", "fox footy", "afl nation", "afl channel"],
-    categoryHints: ["australia", "au sports", "aus sports"],
+    categoryHints: ["au sports", "aus sports"],
     accent: "from-red-700 to-orange-700",
     tsdbLeagueIds: ["4456"],
     channelHint: "Fox Footy HD / Kayo AFL",
@@ -275,8 +275,9 @@ export function filterStreamsForSport(
       // channel is sports-related; otherwise e.g. every AU channel would
       // match "AFL". Require at least one keyword OR a sport-ish category.
       if (catName.includes("sport") || catName.includes("ppv")) return true;
-      // Or check if channel name has any sport-ish word
-      if (/sport|match|game|live|hd|tv/.test(name)) return true;
+      // Or check if channel name has any sport-ish word.
+      // Avoid "tv" / "hd" / "live" — too common, leak unrelated channels.
+      if (/sport|match|game/.test(name)) return true;
     }
     return false;
   });
