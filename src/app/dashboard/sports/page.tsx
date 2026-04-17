@@ -24,6 +24,20 @@ interface TsdbEvent {
   strVenue: string | null;
 }
 
+interface AflFixture {
+  id: number;
+  round: number;
+  roundname: string;
+  date: string;
+  localtime: string;
+  unixtime: number;
+  venue: string;
+  homeTeam: string;
+  homeTeamLogo: string | null;
+  awayTeam: string;
+  awayTeamLogo: string | null;
+}
+
 interface Subscription {
   _id: string;
   status: string;
@@ -44,8 +58,9 @@ export default function SportsPage() {
   const [activeSport, setActiveSport] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
-  // Upcoming events for the active sport (from TheSportsDB)
+  // Upcoming events for the active sport
   const [events, setEvents] = useState<TsdbEvent[]>([]);
+  const [aflFixtures, setAflFixtures] = useState<AflFixture[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [eventsError, setEventsError] = useState("");
   const [eventsNote, setEventsNote] = useState("");
@@ -128,11 +143,18 @@ export default function SportsPage() {
     setEventsNote("");
     setChannelHint(null);
     setEvents([]);
+    setAflFixtures([]);
     try {
-      const res = await fetch(`/api/sports/events?sportId=${sportId}`);
+      const res = await fetch(`/api/sports/events?sportId=${sportId}`, {
+        cache: "no-store",
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      setEvents(Array.isArray(data.events) ? data.events : []);
+      if (Array.isArray(data.fixtures)) {
+        setAflFixtures(data.fixtures);
+      } else {
+        setEvents(Array.isArray(data.events) ? data.events : []);
+      }
       if (data.note) setEventsNote(data.note);
       if (typeof data.channelHint === "string") setChannelHint(data.channelHint);
     } catch (err: unknown) {
@@ -241,6 +263,16 @@ export default function SportsPage() {
                 <div className="mt-4 text-xs text-slate-500">{eventsNote}</div>
               )}
 
+              {/* AFL fixtures (from Squiggle) */}
+              {!eventsLoading && !eventsError && aflFixtures.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {aflFixtures.slice(0, 20).map((fix) => (
+                    <AflFixtureCard key={fix.id} fixture={fix} />
+                  ))}
+                </div>
+              )}
+
+              {/* Other sports events (from TheSportsDB) */}
               {!eventsLoading && !eventsError && events.length > 0 && (
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {events.slice(0, 12).map((ev) => (
@@ -252,7 +284,8 @@ export default function SportsPage() {
               {!eventsLoading &&
                 !eventsError &&
                 !eventsNote &&
-                events.length === 0 && (
+                events.length === 0 &&
+                aflFixtures.length === 0 && (
                   <div className="mt-4 text-xs text-slate-500">
                     No events in the next few weeks.
                   </div>
@@ -465,6 +498,106 @@ function ChannelTile({
       >
         ▶
       </a>
+    </div>
+  );
+}
+
+function AflFixtureCard({ fixture }: { fixture: AflFixture }) {
+  const when = useMemo(() => {
+    const d = new Date(fixture.unixtime * 1000);
+    if (isNaN(d.getTime())) return { dateStr: "TBA", timeStr: "", countdown: "" };
+
+    const now = Date.now();
+    const diff = fixture.unixtime * 1000 - now;
+
+    let countdown = "";
+    if (diff > 0) {
+      const days = Math.floor(diff / 86400000);
+      const hours = Math.floor((diff % 86400000) / 3600000);
+      const mins = Math.floor((diff % 3600000) / 60000);
+      if (days > 0) {
+        countdown = `${days}d ${hours}h`;
+      } else if (hours > 0) {
+        countdown = `${hours}h ${mins}m`;
+      } else {
+        countdown = `${mins}m`;
+      }
+    }
+
+    return {
+      dateStr: d.toLocaleDateString(undefined, {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      }),
+      timeStr: d.toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      countdown,
+    };
+  }, [fixture.unixtime]);
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-amber-900/40 bg-slate-950 p-4">
+      <div className="flex items-center gap-4">
+        {/* Home team */}
+        <div className="flex flex-1 items-center justify-end gap-2 text-right">
+          <span className="truncate text-sm font-semibold text-white">
+            {fixture.homeTeam}
+          </span>
+          {fixture.homeTeamLogo && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={fixture.homeTeamLogo}
+              alt={fixture.homeTeam}
+              className="h-10 w-10 flex-shrink-0 object-contain"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
+          )}
+        </div>
+
+        {/* VS + time */}
+        <div className="flex-shrink-0 text-center">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-amber-400">
+            vs
+          </div>
+          <div className="text-xs font-bold text-white">{when.timeStr}</div>
+          <div className="text-[10px] text-slate-400">{when.dateStr}</div>
+          {when.countdown && (
+            <div className="mt-1 rounded-full bg-emerald-900/40 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+              {when.countdown}
+            </div>
+          )}
+        </div>
+
+        {/* Away team */}
+        <div className="flex flex-1 items-center gap-2">
+          {fixture.awayTeamLogo && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={fixture.awayTeamLogo}
+              alt={fixture.awayTeam}
+              className="h-10 w-10 flex-shrink-0 object-contain"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
+          )}
+          <span className="truncate text-sm font-semibold text-white">
+            {fixture.awayTeam}
+          </span>
+        </div>
+      </div>
+
+      {/* Venue + round */}
+      <div className="mt-2 flex items-center justify-center gap-3 text-[10px] text-slate-500">
+        <span>{fixture.roundname}</span>
+        <span>·</span>
+        <span>{fixture.venue}</span>
+      </div>
     </div>
   );
 }
