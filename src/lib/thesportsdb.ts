@@ -47,6 +47,8 @@ export interface TsdbEvent {
   strStatus: string | null;
   strThumb: string | null;
   strPoster: string | null;
+  strResult: string | null;
+  strDescriptionEN: string | null;
 }
 
 async function fetchTsdb<T>(
