@@ -13,8 +13,9 @@ The user (site owner) is building this for people who are not tech-savvy. Their 
 3. **Hearts (♥) = personal playlist.** Tapping a heart on any channel adds it to the user's personal M3U URL. The M3U contains **only hearted channels** — typically 10-100, not 21k. This keeps the playlist small, fast, and actually usable in IPTV apps (nobody wants to scroll through 21k channels in TiviMate).
 4. **Personal M3U URL card** — shows a live count, a Watch button (webplayer.online), a Copy URL button, and green removable pills (one per hearted channel, `×` to remove). Users can manage their playlist without scrolling through the full catalog.
 5. **A "How to Watch" page** that walks them through setting up IPTV Smarters / TiviMate / VLC on TV / phone / computer. Real IPTV apps > webplayer.online for everyday viewing.
-6. **Sports discovery** at `/dashboard/sports` — pre-curated tiles (AFL, NRL, EPL, UFC, etc.) that surface the relevant channels + upcoming fixtures from neutral sources (Squiggle for AFL, TheSportsDB for global sports).
-7. **VOD Movies + VOD Series** — copy-one-URL experience that plays the whole library in their TV app.
+6. **In-site playback.** Tapping ▶ on any channel opens `/watch/[streamId]` and plays the stream **inline**, no bouncing to another site. Powered by `mpegts.js` in the browser + a self-hosted Caddy + Node proxy on a DigitalOcean droplet at `stream.comfytv.xyz`. Graceful VLC / personal-M3U fallbacks on iOS Safari and anywhere the droplet isn't reachable.
+7. **Sports discovery** at `/dashboard/sports` — pre-curated tiles (AFL, NRL, EPL, UFC, etc.) that surface the relevant channels + upcoming fixtures from neutral sources (Squiggle for AFL, TheSportsDB for global sports).
+8. **VOD Movies + VOD Series** — copy-one-URL experience that plays the whole library in their TV app.
 
 ### Curation happens on MyBunny's portal, not in ComfyTV
 
@@ -46,6 +47,8 @@ The **master MyBunny account (id 12905 / `gfjxcfhq`)** is the source of truth fo
 - **Styling:** Tailwind CSS
 - **Email:** Resend
 - **Deployment:** Vercel at comfytv.xyz
+- **Stream proxy:** DigitalOcean droplet running Caddy (TLS terminator) + a tiny Node service (HMAC verifier + upstream piper). Subdomain: `stream.comfytv.xyz`. One-shot installer + systemd unit + Caddyfile all live in `deploy/droplet/`.
+- **In-browser player:** `mpegts.js` for live MPEG-TS (Chrome / Firefox / Edge / Android). `hls.js` is still bundled for the `/watch/[id]?test=1` diagnostic route (public Mux HLS sample).
 - **Language:** TypeScript
 - **Content source:** MyBunny.TV (reseller) — Xtream-Codes-compatible panel. We use their M3U endpoints only.
 
@@ -69,6 +72,8 @@ src/
 │   │   ├── series/page.tsx          # VOD Series (filterable URL)
 │   │   ├── how-to-watch/page.tsx    # Setup guide for TV / phone / computer
 │   │   └── wallet/page.tsx          # Wallet + on-chain balances
+│   ├── watch/
+│   │   └── [streamId]/page.tsx      # In-site HLS/MPEG-TS player (mpegts.js + hls.js)
 │   ├── admin/
 │   │   ├── page.tsx
 │   │   ├── orders/…
@@ -84,9 +89,12 @@ src/
 │       │   └── _helpers.ts                 # shared auth helper
 │       ├── sports/events/route.ts          # Upcoming fixtures (Squiggle / TheSportsDB)
 │       ├── playlist/[token]/route.ts       # Personal M3U — contains ONLY the user's hearted channels
+│       ├── stream/
+│       │   └── [token]/[streamId]/route.ts # Token-auth 1-entry M3U (for webplayer / legacy tools)
 │       ├── me/
 │       │   ├── favorites/route.ts          # GET / POST {streamId, favorite}
 │       │   ├── favorites/detail/route.ts   # GET hearted channels + per-category counts
+│       │   ├── stream/[streamId]/route.ts  # Session-auth: raw upstream URL + signed droplet-proxy URL
 │       │   └── …
 │       └── admin/
 │           ├── channels/refresh/route.ts   # GET meta / POST refresh-catalog
@@ -111,9 +119,19 @@ src/
 │   ├── squiggle.ts                  # AFL fixtures (Australian)
 │   ├── sports.ts                    # curated SPORTS tiles + filter helpers
 │   ├── playlist-token.ts            # per-user opaque playlist URL
+│   ├── stream-token.ts              # HMAC-SHA256 sign/verify for droplet-proxy URLs (matches deploy/droplet/server.js)
 │   └── email.ts
 └── types/
     └── index.ts                     # shared types + PLANS constant
+
+deploy/
+└── droplet/                         # Stream-proxy infra (ships on a DigitalOcean droplet, NOT Vercel)
+    ├── setup.sh                     # One-shot installer: Caddy + Node 20 + systemd unit + generates HMAC secret
+    ├── server.js                    # Dependency-free Node proxy — verifies HMAC token + pipes upstream bytes
+    ├── Caddyfile                    # HTTPS reverse proxy for stream.comfytv.xyz → localhost:3000
+    ├── comfytv-stream.service       # systemd unit (auto-restart, hardened)
+    ├── package.json                 # Declares Node 18+; no npm install needed (built-in modules only)
+    └── README.md                    # Setup steps + smoke tests + troubleshooting
 ```
 
 ## MongoDB Collections
@@ -142,6 +160,11 @@ HELIUS_API_KEY=                     # server-only Solana RPC
 NEXT_PUBLIC_BUDJU_MINT=             # BUDJU SPL mint address
 MYBUNNY_MASTER_USERNAME=             # reseller account — source of the master catalog
 MYBUNNY_MASTER_PASSWORD=             # reseller account — source of the master catalog
+
+# In-site playback (stream proxy on DigitalOcean droplet)
+ENABLE_DROPLET_PLAYER=1              # feature flag — when unset, /watch shows VLC-fallback UX only
+STREAM_PROXY_HOST=stream.comfytv.xyz # public host of the droplet proxy (Caddy + Node)
+STREAM_PROXY_SECRET=                 # shared HMAC secret; must match droplet's /etc/comfytv-stream/.env
 ```
 
 ## Pricing Plans (Option X — 50% margin base)
@@ -197,6 +220,44 @@ Admin ticks/unticks categories on the master MyBunny portal (account 12905 / `gf
 4. `insertMany(docs, { ordered: false })` — driver parallelises writes
 5. Recreates indexes in parallel (including the compound `{group:1, name:1}` needed for fast playlist generation)
 6. Updates `catalog_meta` with counts + timestamp
+
+## In-site playback architecture (the droplet proxy)
+
+ComfyTV plays live IPTV channels **inside the site** via `/watch/[streamId]`. Getting that working required solving three stacked browser-side constraints that IPTV apps (VLC / TiviMate) never face:
+
+1. **Provider streams progressive MPEG-TS over HTTP**, not HLS. `hls.js` can't play that.
+2. **Browser CORS + mixed content** block direct `fetch()` from `comfytv.xyz` (HTTPS) to `turbobunny.net` (HTTP, no CORS headers, TLS cert bound to hostname).
+3. **Vercel serverless functions cap at 60 s**, so a server-side proxy on Vercel can't pipe a live stream.
+
+Solution (shipped 2026-04-17):
+
+```
+Browser ──HTTPS──► comfytv.xyz (Vercel Next.js)          # app stays here
+        │         GET /api/me/stream/{id}  →  { streamUrl, proxyUrl }
+        ▼         proxyUrl = https://stream.comfytv.xyz/s/<60s-HMAC-signed-token>
+Browser ──HTTPS──► stream.comfytv.xyz (DO droplet: Caddy → Node)
+                                │ verifies HMAC, decodes upstream URL
+                                ▼
+                   http://turbobunny.net/USER/PASS/STREAMID   # server-to-server, no browser rules
+                   │ pipes MPEG-TS bytes back with CORS headers
+                   ▼
+mpegts.js in the browser feeds the <video> element.
+```
+
+Key files:
+
+- **`src/lib/stream-token.ts`** — HMAC-SHA256 sign / verify. The Node.js `crypto` implementation matches `deploy/droplet/server.js` byte-for-byte so both sides can use the same `STREAM_PROXY_SECRET`.
+- **`src/app/api/me/stream/[streamId]/route.ts`** — session-authenticated. Always returns the raw upstream URL (for VLC copy / Open in VLC). Additionally returns a 60-second HMAC-signed `proxyUrl` if and only if `ENABLE_DROPLET_PLAYER=1` AND `STREAM_PROXY_HOST` AND `STREAM_PROXY_SECRET` are all set.
+- **`src/app/watch/[streamId]/page.tsx`** — loads the stream info, picks a playback mode: `mpegts.js` through the droplet (happy path), `hls.js` for `?test=1` (Mux sample for diagnostics), or an explicit "VLC fallback" block when no in-site path is available. iOS Safari gets the fallback because it can't do live MPEG-TS over MSE.
+- **`deploy/droplet/`** — one-shot installer (`DOMAIN=stream.comfytv.xyz bash setup.sh`) provisions Caddy + Node + systemd on a fresh Ubuntu 22.04/24.04 droplet. The Node service is pure stdlib, no npm install needed on the droplet.
+
+Things to remember:
+
+- **Feature flag is safe-default.** When the env vars aren't set, `/watch` renders with VLC / personal-M3U fallbacks — no broken UI.
+- **SSRF-safe.** The HMAC signature covers the upstream URL, so the droplet only ever fetches URLs the Next.js app signed. Tokens expire after 60 seconds.
+- **Don't go back to a Vercel-side proxy.** It was tried on branch `claude/setup-iptv-project-Tqyec` (also merged in an earlier state) and always hit the 60-second Vercel function cap. The droplet is the right place for streaming bytes.
+- **Don't swap `mpegts.js` for `hls.js` on `/watch`.** The provider streams progressive TS, not HLS — `hls.js` will keep trying to parse the body as a playlist, fail, and hang the `<video>` element. Keep `hls.js` around only for the `?test=1` diagnostic.
+- **Monitoring**: `journalctl -u comfytv-stream -f` on the droplet tails request logs. `curl https://stream.comfytv.xyz/health` returns `ok`.
 
 ## Commands
 ```bash
