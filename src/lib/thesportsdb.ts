@@ -13,7 +13,7 @@ const TSDB_BASE = "https://www.thesportsdb.com/api/v1/json/3";
 // free API. Docs:
 //   https://www.thesportsdb.com/free_sports_api.php
 export const TSDB_LEAGUES = {
-  afl: { id: "4449", name: "AFL" },
+  afl: { id: "4456", name: "AFL" },
   nrl: { id: "4418", name: "NRL" },
   superRugby: { id: "4414", name: "Super Rugby" },
   epl: { id: "4328", name: "English Premier League" },
