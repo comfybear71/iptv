@@ -75,7 +75,6 @@ Built `/api/admin/channels/debug?q=...` that returns (a) an inline raw Mongo que
 ## Next steps
 
 ### Queued
-- **In-site HLS player (hls.js).** Cut webplayer.online out of the loop entirely — users stay inside ComfyTV, faster startup, no second tab. Direct follow-up to the `/api/stream/[token]/[id]` endpoint that shipped this session.
 - **Hearts toggle needs page refresh on Browse Channels** (reported 2026-04-17). ♥ click fires the mutation but category-count badges + hearted-pill strip don't re-render until reload. Suspect the optimistic update in `useFavorites` and the `favByCategory` state aren't reconciling after POST.
 - **Drop the UFC fight-card expand** — TheSportsDB's free tier has empty `strResult` / `strDescriptionEN` for upcoming UFC events and `lookupevent.php` is stubbed, so the expand currently shows nothing useful on all visible fixtures. Either remove it or replace the source (see next item).
 - **UFC fight-card expand via Wikipedia REST API.** Wikipedia has structured fight-card tables on every announced UFC event (e.g. `https://en.wikipedia.org/api/rest_v1/page/html/UFC_Fight_Night:_Burns_vs._Malott`). `strEvent` from TheSportsDB maps cleanly to a Wikipedia title slug — parse the first `<table class="toccolours">` for fights. ~50 lines of server-side parser + lazy fetch on expand.
