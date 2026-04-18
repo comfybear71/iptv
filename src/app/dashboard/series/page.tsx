@@ -186,14 +186,18 @@ export default function VodSeriesPage() {
         ) : (
           <div className="mt-3 flex gap-3 overflow-x-auto pb-2">
             {latest.map((s) => (
-              <PosterCard
+              <div
                 key={s.seriesId}
-                href={`/watch/series/${s.seriesId}`}
-                title={s.name}
-                year={s.year}
-                rating={s.rating}
-                poster={s.cover}
-              />
+                className="w-36 flex-shrink-0 sm:w-40 lg:w-44"
+              >
+                <PosterCard
+                  href={`/watch/series/${s.seriesId}`}
+                  title={s.name}
+                  year={s.year}
+                  rating={s.rating}
+                  poster={s.cover}
+                />
+              </div>
             ))}
           </div>
         )}
@@ -357,7 +361,7 @@ function PosterCard({
   return (
     <Link
       href={href}
-      className="group flex w-40 flex-shrink-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900 transition hover:border-slate-600 sm:w-auto"
+      className="group flex w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900 transition hover:border-slate-600"
     >
       <div className="relative aspect-[2/3] overflow-hidden bg-slate-950">
         {poster ? (
