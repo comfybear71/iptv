@@ -36,6 +36,10 @@ export default function WatchPage({
   const [mode, setMode] = useState<PlaybackMode>({ kind: "loading" });
   const [playerError, setPlayerError] = useState("");
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  // true when the video element is waiting / stalled for more data. Drives
+  // the "Buffering…" overlay so users know we're not frozen, just waiting
+  // on bytes.
+  const [isBuffering, setIsBuffering] = useState(false);
 
   // Resolve stream info + decide playback mode.
   useEffect(() => {
@@ -148,8 +152,16 @@ export default function WatchPage({
             // playback over sub-second latency. Viewers don't care about
             // being 5 s behind live; they care about stutter.
             liveBufferLatencyChasing: false,
-            // Bigger initial buffer → smoother startup on first play.
-            stashInitialSize: 384,
+            // Explicit stash-buffer settings — mpegts.js defaults to
+            // enabled but being explicit makes the intent obvious if we
+            // ever tune further.
+            enableStashBuffer: true,
+            // Bigger initial buffer → smoother startup + rides through
+            // brief upstream hiccups without stalling. 1 MB ≈ ~1-2 s at
+            // typical 5 Mbps IPTV bitrates; users see a slightly longer
+            // "Loading…" before first frame but far fewer mid-stream
+            // stalls afterwards.
+            stashInitialSize: 1024,
             // Release already-played buffers so long sessions don't eat RAM.
             autoCleanupSourceBuffer: true,
           }
@@ -183,6 +195,29 @@ export default function WatchPage({
       if (destroy) destroy();
       video.removeAttribute("src");
       video.load();
+    };
+  }, [mode]);
+
+  // Surface buffering state to the UI. Native <video> events cover both
+  // playback paths (mpegts.js + native HLS) — we don't need a separate
+  // hook into mpegts.js because it dispatches the same DOM events via
+  // the attached media element.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onWaiting = () => setIsBuffering(true);
+    const onStalled = () => setIsBuffering(true);
+    const onPlaying = () => setIsBuffering(false);
+    const onCanPlay = () => setIsBuffering(false);
+    video.addEventListener("waiting", onWaiting);
+    video.addEventListener("stalled", onStalled);
+    video.addEventListener("playing", onPlaying);
+    video.addEventListener("canplay", onCanPlay);
+    return () => {
+      video.removeEventListener("waiting", onWaiting);
+      video.removeEventListener("stalled", onStalled);
+      video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("canplay", onCanPlay);
     };
   }, [mode]);
 
@@ -246,7 +281,7 @@ export default function WatchPage({
         </div>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-slate-800 bg-black">
+      <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-black">
         <video
           ref={videoRef}
           controls
@@ -254,6 +289,14 @@ export default function WatchPage({
           autoPlay
           className="block aspect-video w-full bg-black"
         />
+        {isBuffering && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="flex items-center gap-3 rounded-xl bg-black/70 px-4 py-2.5 text-sm text-white backdrop-blur-sm">
+              <span className="block h-4 w-4 animate-spin rounded-full border-2 border-slate-500 border-t-white" />
+              Buffering…
+            </div>
+          </div>
+        )}
       </div>
 
       {playerError && (
