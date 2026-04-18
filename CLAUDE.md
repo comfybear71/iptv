@@ -179,9 +179,14 @@ ENABLE_DROPLET_PLAYER=1              # feature flag — when unset, /watch shows
 STREAM_PROXY_HOST=stream.comfytv.xyz # public host of the droplet proxy (Caddy + Node)
 STREAM_PROXY_SECRET=                 # shared HMAC secret; must match droplet's /etc/comfytv-stream/.env
 
-# VOD caching (Upstash Redis)
-UPSTASH_REDIS_REST_URL=              # optional — caches Xtream VOD responses (1h list, 24h detail)
-UPSTASH_REDIS_REST_TOKEN=            # optional — without it, every VOD page load hits MyBunny live
+# VOD caching (Upstash Redis) — optional
+# Either naming convention works:
+#   - UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN (plain Upstash)
+#   - KV_REST_API_URL / KV_REST_API_TOKEN (Vercel Marketplace "Upstash for
+#     Redis" auto-injects these names — same service, same client)
+# Without either set, every VOD page load hits MyBunny live (slower, still works).
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
 ```
 
 ## Pricing Plans (Option X — 50% margin base)
