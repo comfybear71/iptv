@@ -102,7 +102,7 @@ function CallbackInner() {
         const result = parseSignReturn(params);
         if (!result?.signature) throw new Error("No signature in response");
 
-        const pendingJson = sessionStorage.getItem("pending_plan_state");
+        const pendingJson = localStorage.getItem("pending_plan_state");
         if (!pendingJson) {
           throw new Error(
             "Lost your plan selection — please start checkout again"
@@ -137,7 +137,7 @@ function CallbackInner() {
         }
         if (!res.ok) throw new Error(data.error || "Verification failed");
 
-        sessionStorage.removeItem("pending_plan_state");
+        localStorage.removeItem("pending_plan_state");
         setStatus({ kind: "ok", message: "Payment confirmed" });
         router.replace("/subscribe?paid=1");
       } catch (err: unknown) {

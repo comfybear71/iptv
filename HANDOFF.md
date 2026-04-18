@@ -76,7 +76,22 @@ Built `/api/admin/channels/debug?q=...` that returns (a) an inline raw Mongo que
 
 ### Queued (top of the next session's list)
 
-**1. Hearts toggle needs page refresh on Browse Channels.** ♥ click fires the mutation but category-count badges + hearted-pill strip don't re-render until reload. Suspect optimistic update in `useFavorites` + `favByCategory` state aren't reconciling after POST. Small, self-contained bug — good first task for a fresh session.
+**1. Phantom same-device flow refactor (Option B — queued for future).** We currently use Phantom's *deeplink* protocol on iOS (`phantom.app/ul/v1/connect` + encrypted X25519 responses, client-side decrypt). Works today after the `/subscribe/callback` + `localStorage` fixes, but it's fragile and tightens every iOS release. The proven alternative — verified in the `aiglitch` repo — is Phantom's **browse universal link**: redirect `phantom.app/ul/browse/<our-url>` opens our page *inside Phantom's in-app Chrome webview*, where `window.solana` is live. The same web3.js code used on desktop (`.connect()`, `.signTransaction()`) just works — no deeplink encryption, no sessionStorage/localStorage gymnastics, no callback-parsing page.
+
+The catch: Phantom's in-app browser has its own cookie jar, so the NextAuth Google session from Safari does NOT follow the user into Phantom's browser. aiglitch solves this with an **intent pattern**:
+  - Safari (authenticated) → POST `/api/subscription/create-intent` with plan + wallet + amount → returns opaque `intentId` (Redis/Mongo, 10 min TTL).
+  - Safari redirects user to `phantom.app/ul/browse/comfytv.xyz/pay?i=<intentId>`.
+  - Phantom browser opens the `/pay?i=...` page, no auth needed because `intentId` is the bearer.
+  - `/pay` calls `window.solana.connect()` → backend builds a fresh Solana tx → wallet signs → backend submits → marks user's subscription active on success.
+  - User closes Phantom, Safari tab polls / refreshes and sees the new subscription.
+
+Scope estimate: ~200 LOC, three new backend routes (`create-intent`, `build-and-sign`, `submit`), one new `/pay/[intentId]` page, intent storage (Mongo collection with TTL index is fine — no need for Redis). Also cleanly fixes wallet-switching (every tx calls `.connect()` fresh) and eliminates Bug B (pay-click user-gesture drop on iOS — no more async work between click and redirect).
+
+Reference implementation: https://github.com/comfybear71/aiglitch — see `src/app/api/auth/sign-tx/route.ts` and `src/app/auth/sign-tx/page.tsx` for the three-action backend + same-device page patterns.
+
+When to do this: bundle with the Stripe checkout work (both touch the payment flow, worth refactoring the subscribe path once). Or sooner if iOS Safari breaks the deeplink protocol again.
+
+**2. Hearts toggle needs page refresh on Browse Channels.** ♥ click fires the mutation but category-count badges + hearted-pill strip don't re-render until reload. Suspect optimistic update in `useFavorites` + `favByCategory` state aren't reconciling after POST. Small, self-contained bug — good first task for a fresh session.
 
 **2. UFC fight-card expand** — two paths, pick one:
   - **Drop it.** TheSportsDB's free tier has empty `strResult` / `strDescriptionEN` for upcoming UFC events and `lookupevent.php` is stubbed (returns Liverpool vs Swansea 2014 for any ID on key `3`). Expand shows nothing useful. Easiest: remove the expandable UI in `src/app/dashboard/sports/page.tsx`.
@@ -173,3 +188,9 @@ PR #55 closes this out. The droplet is the shipping infrastructure. Infrastructu
 - Stripe checkout path.
 - EPG "Now Playing" badges.
 - In-site player polish (buffer tuning, droplet monitoring).
+- Phantom same-device flow refactor (Option B — aiglitch pattern, see Queued #1).
+
+### Known testing constraints (not bugs — just things to know)
+
+- **Google auto-sign-in on iPhone.** Once a user has signed into Google in iOS Safari, NextAuth + Google OAuth will silently reuse the same account on subsequent visits — even after "Sign Out" on ComfyTV. To test another user's account on the same phone: either sign out of Google itself in Safari (`google.com` → profile → Sign out), use Safari Private Browsing, or use a different browser app. This is a Google-side behaviour, not a ComfyTV bug.
+- **Admin test button coming.** `/admin/orders/[id]` will get a "Mark paid (simulate)" button so the admin can exercise the post-payment provisioning flow without spending real SOL/BUDJU. Next PR after the iOS payment fixes settle.

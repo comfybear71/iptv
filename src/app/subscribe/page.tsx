@@ -155,7 +155,7 @@ function SubscribeContent() {
     }
 
     // Restore pending plan selection (saved before redirecting to Phantom)
-    const pendingJson = sessionStorage.getItem("pending_plan_state");
+    const pendingJson = localStorage.getItem("pending_plan_state");
     if (pendingJson) {
       try {
         const pending = JSON.parse(pendingJson);
@@ -214,7 +214,7 @@ function SubscribeContent() {
     setError("");
     try {
       // Save state so we can restore after Phantom redirects back
-      sessionStorage.setItem(
+      localStorage.setItem(
         "pending_plan_state",
         JSON.stringify({
           planId: selectedPlan.id,
@@ -375,7 +375,7 @@ function SubscribeContent() {
       tx.recentBlockhash = bh.value.blockhash;
       tx.feePayer = payerPubkey;
 
-      sessionStorage.setItem(
+      localStorage.setItem(
         "pending_plan_state",
         JSON.stringify({
           planId: selectedPlan.id,
