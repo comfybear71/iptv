@@ -31,10 +31,6 @@ import {
   isMobileDevice,
   buildConnectUrl,
   buildSignAndSendUrl,
-  parseConnectReturn,
-  parseSignReturn,
-  detectPhantomCallback,
-  cleanPhantomCallbackFromUrl,
   getStoredPhantomSession,
   clearPhantomSession,
 } from "@/lib/phantom-deeplink";
@@ -140,7 +136,11 @@ function SubscribeContent() {
       });
   }, []);
 
-  // Mobile detection + Phantom deeplink callback handling
+  // Mobile detection + restore prior state after returning from Phantom.
+  // Note: Phantom callback parsing itself lives on /subscribe/callback —
+  // iOS Safari would otherwise tab-consolidate away the query params when
+  // Phantom redirected straight back to /subscribe. This effect just
+  // re-hydrates the pending plan + existing wallet session on load.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mobile = isMobileDevice();
@@ -154,7 +154,7 @@ function SubscribeContent() {
       fetchBalanceAndDiscount(stored.walletAddress);
     }
 
-    // Restore pending plan selection (before redirect)
+    // Restore pending plan selection (saved before redirecting to Phantom)
     const pendingJson = sessionStorage.getItem("pending_plan_state");
     if (pendingJson) {
       try {
@@ -174,93 +174,17 @@ function SubscribeContent() {
       }
     }
 
-    // Check URL for Phantom callback
+    // ?paid=1 is set by the callback page after a successful sign+verify.
+    // Show the success screen and clear the flag from the URL.
     const urlParams = new URLSearchParams(window.location.search);
-    const callbackType = detectPhantomCallback(urlParams);
-
-    if (callbackType === "connect") {
-      try {
-        const result = parseConnectReturn(urlParams);
-        if (result) {
-          setMobileWallet(result.walletAddress);
-          fetchBalanceAndDiscount(result.walletAddress);
-          // Persist to the user's account server-side so the dashboard
-          // (and other pages) see the linked wallet on subsequent loads.
-          fetch("/api/me/wallet/phantom-mobile", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ address: result.walletAddress }),
-          })
-            .then(() => setLinkedWallet(result.walletAddress))
-            .catch(() => {
-              // Non-fatal — session state still works for this tab
-            });
-        }
-      } catch (err: any) {
-        setError(err?.message || "Connect failed");
-      } finally {
-        cleanPhantomCallbackFromUrl();
-      }
-    } else if (callbackType === "sign") {
-      try {
-        const result = parseSignReturn(urlParams);
-        if (result?.signature) {
-          // We have a signature — verify with backend
-          verifyMobileSignature(result.signature);
-        }
-      } catch (err: any) {
-        setError(err?.message || "Sign failed");
-        setMobileProcessing(false);
-      } finally {
-        cleanPhantomCallbackFromUrl();
-      }
+    if (urlParams.get("paid") === "1") {
+      setSuccess(true);
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("paid");
+      window.history.replaceState({}, "", clean.toString());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const verifyMobileSignature = useCallback(
-    async (signature: string) => {
-      setMobileProcessing(true);
-      try {
-        const pendingJson = sessionStorage.getItem("pending_plan_state");
-        if (!pendingJson) throw new Error("No pending plan — start over");
-        const pending = JSON.parse(pendingJson);
-        const stored = getStoredPhantomSession();
-        if (!stored) throw new Error("Wallet session lost — reconnect");
-
-        const res = await fetch("/api/orders/verify-tx", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            plan: pending.planId,
-            months: pending.months || 1,
-            currency: pending.currency,
-            signature,
-            walletAddress: stored.walletAddress,
-            desiredChannelName: pending.desiredChannelName || undefined,
-          }),
-        });
-        const text = await res.text();
-        let data: any = {};
-        try {
-          data = JSON.parse(text);
-        } catch {
-          throw new Error(
-            `Server error (${res.status}) — payment likely went through; check dashboard in a moment.`
-          );
-        }
-        if (!res.ok) throw new Error(data.error || "Verification failed");
-
-        sessionStorage.removeItem("pending_plan_state");
-        setSuccess(true);
-      } catch (err: any) {
-        setError(err?.message || "Verification failed");
-      } finally {
-        setMobileProcessing(false);
-      }
-    },
-    []
-  );
 
   // When wallet connects, verify + save + load balance
   useEffect(() => {
@@ -299,7 +223,9 @@ function SubscribeContent() {
           desiredChannelName: desiredChannelName.trim(),
         })
       );
-      const redirectUrl = window.location.origin + "/subscribe";
+      // Dedicated callback path — /subscribe is consolidated by Safari
+      // on return, stripping the Phantom payload.
+      const redirectUrl = window.location.origin + "/subscribe/callback";
       const url = buildConnectUrl(redirectUrl);
       window.location.href = url;
     } catch (err: any) {
@@ -459,7 +385,8 @@ function SubscribeContent() {
         })
       );
 
-      const redirectUrl = window.location.origin + "/subscribe";
+      // Dedicated callback path — see mobileConnect for why.
+      const redirectUrl = window.location.origin + "/subscribe/callback";
       const url = buildSignAndSendUrl({ transaction: tx, redirectUrl });
       window.location.href = url;
     } catch (err: any) {
