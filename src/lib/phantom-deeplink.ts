@@ -7,12 +7,20 @@
  * blocks Google OAuth).
  *
  * Flow:
- *   1. We generate an X25519 keypair; stored in sessionStorage
+ *   1. We generate an X25519 keypair; stored in localStorage
  *   2. Redirect user to phantom.app/ul/v1/connect with our public key
  *   3. Phantom approves, redirects back with encrypted response
  *   4. We decrypt to get their wallet address + a session token
  *   5. For signing: encrypt tx payload, redirect to phantom.app/ul/v1/signAndSendTransaction
  *   6. Phantom returns encrypted signature response
+ *
+ * Why localStorage (not sessionStorage): on iOS, Phantom's callback lands
+ * on a dedicated /subscribe/callback path which Safari treats as a new
+ * tab. sessionStorage is per-tab, so the callback tab couldn't access the
+ * dapp keypair created on /subscribe. localStorage is origin-scoped and
+ * shared across all tabs, so the callback tab can decrypt the response.
+ * Stored values are ephemeral throwaway state for this Phantom session
+ * only — not a user credential.
  */
 
 import nacl from "tweetnacl";
@@ -47,7 +55,7 @@ export function isInPhantomBrowser(): boolean {
 // ---------- Keypair management ----------
 
 function getOrCreateDappKeypair(): nacl.BoxKeyPair {
-  const stored = sessionStorage.getItem(STORAGE_KEYPAIR);
+  const stored = localStorage.getItem(STORAGE_KEYPAIR);
   if (stored) {
     const parsed = JSON.parse(stored);
     return {
@@ -56,7 +64,7 @@ function getOrCreateDappKeypair(): nacl.BoxKeyPair {
     };
   }
   const kp = nacl.box.keyPair();
-  sessionStorage.setItem(
+  localStorage.setItem(
     STORAGE_KEYPAIR,
     JSON.stringify({
       publicKey: bs58.encode(kp.publicKey),
@@ -71,18 +79,18 @@ export function getStoredPhantomSession(): {
   session: string;
   phantomPublicKey: string;
 } | null {
-  const wallet = sessionStorage.getItem(STORAGE_WALLET);
-  const session = sessionStorage.getItem(STORAGE_SESSION);
-  const phantomPk = sessionStorage.getItem(STORAGE_PHANTOM_PK);
+  const wallet = localStorage.getItem(STORAGE_WALLET);
+  const session = localStorage.getItem(STORAGE_SESSION);
+  const phantomPk = localStorage.getItem(STORAGE_PHANTOM_PK);
   if (!wallet || !session || !phantomPk) return null;
   return { walletAddress: wallet, session, phantomPublicKey: phantomPk };
 }
 
 export function clearPhantomSession() {
-  sessionStorage.removeItem(STORAGE_KEYPAIR);
-  sessionStorage.removeItem(STORAGE_SESSION);
-  sessionStorage.removeItem(STORAGE_PHANTOM_PK);
-  sessionStorage.removeItem(STORAGE_WALLET);
+  localStorage.removeItem(STORAGE_KEYPAIR);
+  localStorage.removeItem(STORAGE_SESSION);
+  localStorage.removeItem(STORAGE_PHANTOM_PK);
+  localStorage.removeItem(STORAGE_WALLET);
 }
 
 // ---------- Encrypt / decrypt ----------
@@ -129,7 +137,7 @@ export function buildConnectUrl(redirectUrl: string, cluster = "mainnet-beta"): 
 
 /**
  * Parse Phantom's connect callback from URL search params.
- * Stores the session in sessionStorage on success.
+ * Stores the session in localStorage on success.
  * Returns null if the params aren't a Phantom connect callback.
  */
 export function parseConnectReturn(params: URLSearchParams): {
@@ -158,9 +166,9 @@ export function parseConnectReturn(params: URLSearchParams): {
     phantomPublicKey: phantomPk,
   };
 
-  sessionStorage.setItem(STORAGE_WALLET, result.walletAddress);
-  sessionStorage.setItem(STORAGE_SESSION, result.session);
-  sessionStorage.setItem(STORAGE_PHANTOM_PK, result.phantomPublicKey);
+  localStorage.setItem(STORAGE_WALLET, result.walletAddress);
+  localStorage.setItem(STORAGE_SESSION, result.session);
+  localStorage.setItem(STORAGE_PHANTOM_PK, result.phantomPublicKey);
 
   return result;
 }
