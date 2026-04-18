@@ -73,7 +73,9 @@ src/
 │   │   ├── how-to-watch/page.tsx    # Setup guide for TV / phone / computer
 │   │   └── wallet/page.tsx          # Wallet + on-chain balances
 │   ├── watch/
-│   │   └── [streamId]/page.tsx      # In-site HLS/MPEG-TS player (mpegts.js + hls.js)
+│   │   ├── [streamId]/page.tsx      # Live TV player (mpegts.js + hls.js)
+│   │   ├── movie/[id]/page.tsx      # VOD movie player (native <video> + droplet proxy)
+│   │   └── series/[id]/page.tsx     # Series detail + season/episode picker + <video>
 │   ├── admin/
 │   │   ├── page.tsx
 │   │   ├── orders/…
@@ -88,6 +90,14 @@ src/
 │       │   ├── streams/route.ts            # Master catalog channels — paginated/searchable, per-user playback URLs
 │       │   └── _helpers.ts                 # shared auth helper
 │       ├── sports/events/route.ts          # Upcoming fixtures (Squiggle / TheSportsDB)
+│       ├── vod/
+│       │   ├── categories/[kind]/route.ts  # Movie / series genre lists (Xtream categories)
+│       │   ├── movies/latest/route.ts      # Latest movies (posters only, by `added` desc)
+│       │   ├── movies/route.ts             # Year + genre filter, paginated grid
+│       │   ├── movies/[id]/route.ts        # Full movie info (plot, cast, poster)
+│       │   ├── series/latest/route.ts      # Latest series (by `last_modified`)
+│       │   ├── series/route.ts             # Year + genre filter for series
+│       │   └── series/[id]/route.ts        # Seasons + episodes tree
 │       ├── playlist/[token]/route.ts       # Personal M3U — contains ONLY the user's hearted channels
 │       ├── stream/
 │       │   └── [token]/[streamId]/route.ts # Token-auth 1-entry M3U (for webplayer / legacy tools)
@@ -95,6 +105,7 @@ src/
 │       │   ├── favorites/route.ts          # GET / POST {streamId, favorite}
 │       │   ├── favorites/detail/route.ts   # GET hearted channels + per-category counts
 │       │   ├── stream/[streamId]/route.ts  # Session-auth: raw upstream URL + signed droplet-proxy URL
+│       │   ├── vod/[kind]/[id]/route.ts    # Session-auth VOD playback URL (movie / episode)
 │       │   └── …
 │       └── admin/
 │           ├── channels/refresh/route.ts   # GET meta / POST refresh-catalog
@@ -120,6 +131,8 @@ src/
 │   ├── sports.ts                    # curated SPORTS tiles + filter helpers
 │   ├── playlist-token.ts            # per-user opaque playlist URL
 │   ├── stream-token.ts              # HMAC-SHA256 sign/verify for droplet-proxy URLs (matches deploy/droplet/server.js)
+│   ├── xtream-vod.ts                # Typed + Redis-cached fetchers for MyBunny's player_api.php VOD endpoints
+│   ├── redis.ts                     # Upstash Redis client + getOrSet helper (optional; falls back to no-cache)
 │   └── email.ts
 └── types/
     └── index.ts                     # shared types + PLANS constant
@@ -165,6 +178,10 @@ MYBUNNY_MASTER_PASSWORD=             # reseller account — source of the master
 ENABLE_DROPLET_PLAYER=1              # feature flag — when unset, /watch shows VLC-fallback UX only
 STREAM_PROXY_HOST=stream.comfytv.xyz # public host of the droplet proxy (Caddy + Node)
 STREAM_PROXY_SECRET=                 # shared HMAC secret; must match droplet's /etc/comfytv-stream/.env
+
+# VOD caching (Upstash Redis)
+UPSTASH_REDIS_REST_URL=              # optional — caches Xtream VOD responses (1h list, 24h detail)
+UPSTASH_REDIS_REST_TOKEN=            # optional — without it, every VOD page load hits MyBunny live
 ```
 
 ## Pricing Plans (Option X — 50% margin base)

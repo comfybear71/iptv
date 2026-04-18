@@ -36,6 +36,7 @@ Users then curate which **channels** they want to watch by hearting them in Brow
 - **Sports hub Next: previews** — AFL and UFC tiles show an at-a-glance "Next: fixture · day" badge fetched on page mount, so users see what's coming without clicking in.
 - **AFL channel filter** — tightened; returns ~10-20 relevant channels (7AFL, WAFL, Fox Footy, Kayo AFL) instead of 100+ unrelated AU channels.
 - **In-site live TV playback 🎬 (shipped 2026-04-17)** — tap ▶ on any channel in Browse Channels or Sports, the stream plays **inline** at `/watch/[streamId]` via `mpegts.js`. Backed by a self-hosted Caddy + Node proxy on a DigitalOcean droplet at `stream.comfytv.xyz`. 60-second HMAC-signed URLs minted by `/api/me/stream/[streamId]`. Graceful VLC / personal-M3U / setup-guide fallback on iOS Safari and when the droplet isn't reachable. Full architecture + runbook in CLAUDE.md.
+- **VOD Movies + Series in-site playback 🎬 (shipped 2026-04-18)** — `/dashboard/movies` and `/dashboard/series` now show a "Latest Added" poster row + year/genre-filterable grid. Click any poster → `/watch/movie/[id]` or `/watch/series/[id]` (with season/episode picker). Native `<video>` element through the same droplet proxy as live TV, so MP4 plays inline with native controls (seek / pause / fullscreen free). MyBunny Xtream API responses are cached in Upstash Redis (1h for list endpoints, 24h for detail) — cache is optional, falls back to live-fetch if env vars aren't set. The M3U URL card is kept at the top of each page for users who prefer TiviMate / IPTV Smarters / VLC.
 - **Admin debug endpoint** `/api/admin/channels/debug?q=...&category=...` — read-only diagnostic returning raw Mongo query results + a parallel `queryChannels()` run for comparison.
 
 ### What's broken / pending
@@ -181,14 +182,39 @@ After yesterday's three failed in-site playback attempts and the diagnostic brea
 
 PR #55 closes this out. The droplet is the shipping infrastructure. Infrastructure to consider later: horizontal scale (load-balanced pair of droplets), monitoring (UptimeRobot on `/health`), per-user bandwidth logging.
 
+### 2026-04-18 — VOD browser 🎬 SHIPPED
+
+Earlier in the day: foreign-language channel filter (v1.8.6/.7), bigger mpegts.js initial buffer + "Buffering…" overlay (v1.8.8), SSH key auth for the droplet with password login disabled.
+
+Then the big one: **VOD Movies + Series in-site playback** (v1.8.9 / this PR).
+
+**Architecture (MVP — no Mongo catalog, Redis-cached passthrough)**
+- `src/lib/xtream-vod.ts` — typed fetchers for `get_vod_categories`, `get_vod_streams`, `get_vod_info`, `get_series_categories`, `get_series`, `get_series_info`, each wrapped in `getOrSet` from `src/lib/redis.ts` (Upstash) with 1h / 24h TTLs.
+- Seven new `/api/vod/…` routes for category / list / detail / latest lookups, plus `/api/me/vod/[kind]/[id]` (session-authed — mints an HMAC-signed droplet-proxy URL with a 10-min TTL so one signed URL survives a full movie).
+- Two new `/watch` routes — `/watch/movie/[id]` and `/watch/series/[id]` — using native `<video>` (movies/episodes are MP4 so no mpegts.js / hls.js needed). Poster + plot + cast; series page has season/episode picker. "Buffering…" overlay reused from live TV.
+- `/dashboard/movies` and `/dashboard/series` keep their existing M3U URL cards (TiviMate users unchanged) but now have a scrollable "Latest Added" poster row at top + a filterable poster grid below the year/genre chips.
+
+**Redis is optional** — if `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` aren't set, `getOrSet` runs the loader every time. Slower, still works. PR can merge + deploy before Upstash is wired; caching activates once env vars land.
+
+**Deliberately deferred to future PRs** (noted in this section so they don't get lost):
+- Search within VOD.
+- Continue-watching / resume timestamps (the `<video>` element gives us currentTime — just need a user-scoped collection to persist it).
+- YouTube trailer preview on series pages (`info.youtube_trailer` is already fetched).
+- Mongo-backed VOD catalog with admin-triggered refresh (only if the Redis-cache approach proves inadequate for more than 5 users).
+
 ### Outstanding
 - Hearts-toggle refresh bug on Browse Channels.
 - UFC fight-card expand — drop or replace with Wikipedia REST API.
 - Squiggle AFL fix.
 - Stripe checkout path.
 - EPG "Now Playing" badges.
-- In-site player polish (buffer tuning, droplet monitoring).
+- In-site player polish (droplet monitoring / UptimeRobot on `/health`).
 - Phantom same-device flow refactor (Option B — aiglitch pattern, see Queued #1).
+- VOD search (Phase 2 of VOD).
+- VOD continue-watching / resume timestamps (Phase 2).
+- YouTube trailer previews on series (Phase 2).
+- Mongo-backed VOD catalog with admin refresh (only if Redis approach proves inadequate).
+- Admin "Mark paid (simulate)" test button on `/admin/orders/[id]` — still outstanding.
 
 ### Known testing constraints (not bugs — just things to know)
 
