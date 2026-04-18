@@ -227,10 +227,24 @@ function ChooseMode({
   const handleConnect = useCallback(() => {
     setError("");
 
-    // Mobile → redirect to Phantom deeplink
+    // Mobile → redirect to Phantom deeplink.
+    // redirect_link points at /subscribe/callback (the page that parses the
+    // encrypted payload and calls /api/me/wallet/phantom-mobile). We pass
+    // ?return=<current path> so the callback sends the user back to where
+    // they clicked "Change Wallet" — not the subscribe page they never
+    // intended to visit.
     if (mobile) {
       try {
-        const url = buildConnectUrl(window.location.origin + "/dashboard/order");
+        const returnPath =
+          typeof window !== "undefined" &&
+          window.location.pathname.startsWith("/dashboard")
+            ? window.location.pathname
+            : "/dashboard";
+        const callbackUrl =
+          window.location.origin +
+          "/subscribe/callback?return=" +
+          encodeURIComponent(returnPath);
+        const url = buildConnectUrl(callbackUrl);
         window.location.href = url;
       } catch (err: any) {
         setError(err?.message || "Failed to open Phantom");
