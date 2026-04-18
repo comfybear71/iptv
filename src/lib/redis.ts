@@ -1,17 +1,25 @@
 /**
  * Upstash Redis client + getOrSet caching helper.
  *
- * Caching is OPTIONAL — if UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
- * aren't set (e.g. during local dev or before the env vars are wired up),
- * `getOrSet` falls back to just running the loader every time. That way
- * the VOD feature works end-to-end without Redis, it's just slower.
+ * Caching is OPTIONAL — if no Redis env vars are set, `getOrSet` falls
+ * back to just running the loader every time. That way the VOD feature
+ * works end-to-end without Redis, it's just slower.
  *
- * Setup (one-time):
- *   1. Create a free database at https://upstash.com (Redis → Create).
- *   2. Open the database's REST API tab.
- *   3. Copy UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN.
- *   4. Add both to your Vercel project env vars.
- *   5. Redeploy. Caching activates automatically.
+ * Recognises two env var naming conventions:
+ *   - `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` (plain Upstash)
+ *   - `KV_REST_API_URL` + `KV_REST_API_TOKEN` (Vercel Marketplace's
+ *     "Upstash for Redis" integration — same service under the hood,
+ *     different env var names injected automatically).
+ *
+ * Setup (pick one):
+ *
+ *   Vercel Marketplace (easiest):
+ *     Project → Storage → Browse Marketplace → Upstash for Redis → Create.
+ *     Vercel injects KV_REST_API_URL/TOKEN into all environments.
+ *
+ *   Plain Upstash:
+ *     Create a DB at https://upstash.com → copy REST URL + TOKEN from the
+ *     REST API tab → add as UPSTASH_REDIS_REST_URL/_TOKEN in Vercel.
  */
 
 import { Redis } from "@upstash/redis";
@@ -20,8 +28,10 @@ let client: Redis | null = null;
 
 function getClient(): Redis | null {
   if (client) return client;
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
   if (!url || !token) return null;
   client = new Redis({ url, token });
   return client;
@@ -77,7 +87,9 @@ export async function invalidate(key: string): Promise<void> {
  * display cache status.
  */
 export function isRedisConfigured(): boolean {
-  return !!(
-    process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-  );
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+  return !!(url && token);
 }
