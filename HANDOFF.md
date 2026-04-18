@@ -23,9 +23,9 @@ Users then curate which **channels** they want to watch by hearting them in Brow
 - Per-user MyBunny sub-account configuration (customers shouldn't need to configure anything on MyBunny).
 - A personal M3U that dumps all 21k channels into the user's IPTV app (makes IPTV apps crawl; hearts replace it).
 
-## Current state (2026-04-17 late night)
+## Current state (2026-04-18)
 
-### Working on production (verified on admin + dad's device)
+### Working on production (verified on admin + user devices)
 
 - **Master channel catalog** — `channels` collection in Mongo stores all ~21k channels from the master account. Every user sees the same catalog. Refresh on demand via `/admin`.
 - **Per-user playback URLs** — when a user hits play, we swap *their* credentials into the stream URL pattern (`http://turbobunny.net/{user}/{pass}/{streamId}`). Verified: any valid MyBunny sub-account's creds unlock any stream ID in the master catalog.
@@ -35,13 +35,15 @@ Users then curate which **channels** they want to watch by hearting them in Brow
 - **Removable pills on the playlist card** — each hearted channel shows as a green pill with `×`. Clicking `×` unhearts the channel.
 - **Sports hub Next: previews** — AFL and UFC tiles show an at-a-glance "Next: fixture · day" badge fetched on page mount, so users see what's coming without clicking in.
 - **AFL channel filter** — tightened; returns ~10-20 relevant channels (7AFL, WAFL, Fox Footy, Kayo AFL) instead of 100+ unrelated AU channels.
-- **In-site live TV playback 🎬 (shipped 2026-04-17)** — tap ▶ on any channel in Browse Channels or Sports, the stream plays **inline** at `/watch/[streamId]` via `mpegts.js`. Backed by a self-hosted Caddy + Node proxy on a DigitalOcean droplet at `stream.comfytv.xyz`. 60-second HMAC-signed URLs minted by `/api/me/stream/[streamId]`. Graceful VLC / personal-M3U / setup-guide fallback on iOS Safari and when the droplet isn't reachable. Full architecture + runbook in CLAUDE.md.
+- **In-site live TV playback 🎬** — tap ▶ on any channel in Browse Channels or Sports, the stream plays **inline** at `/watch/[streamId]` via `mpegts.js`. Backed by a self-hosted Caddy + Node proxy on a DigitalOcean droplet at `stream.comfytv.xyz`. 60-second HMAC-signed URLs minted by `/api/me/stream/[streamId]`. Graceful VLC / personal-M3U / setup-guide fallback on iOS Safari and when the droplet isn't reachable. Full architecture + runbook in CLAUDE.md.
+- **iOS Phantom wallet flow 🎉** — connect + change-wallet both work end-to-end on iPhone Safari. Deeplink returns go through a dedicated `/subscribe/callback` path (dodges Safari's tab-consolidation), session state lives in `localStorage` (shared across tabs), and the "Change Wallet" button from the dashboard strip uses `?return=<path>` so users land back where they started instead of on `/dashboard/order`. Desktop Phantom-extension flow unchanged.
 - **Admin debug endpoint** `/api/admin/channels/debug?q=...&category=...` — read-only diagnostic returning raw Mongo query results + a parallel `queryChannels()` run for comparison.
 
 ### What's broken / pending
 
 - **Hearts toggle refresh bug** — ♥ click on Browse Channels fires the mutation but category-count badges + hearted-pill strip don't re-render until a full page reload. Suspect optimistic update in `useFavorites` + `favByCategory` reconciliation after POST.
 - **UFC fight-card expand** — currently wired to TheSportsDB's `strResult`, which is empty for upcoming fixtures on the free tier. Either drop the expand UI or replace the data source with Wikipedia's REST API (see Queued).
+- **Bug B (iOS pay-click silent drop)** — theoretical risk: Phantom `sign & send` redirect on iOS may be dropped by Safari's user-gesture policy if there's enough async work between click and redirect. **Not yet confirmed on production** — the droplet proxy + in-site player means most users don't need to pay on iPhone to use the service. Flagged for next session if it surfaces.
 - Sports Phase C work (channel ↔ event matching, remind-me, live-now badges) deferred.
 - EPG "Now Playing" badges on channel tiles — not started.
 - Stripe checkout path (alternative to SOL/BUDJU for non-crypto customers) — not started.
@@ -74,43 +76,47 @@ Built `/api/admin/channels/debug?q=...` that returns (a) an inline raw Mongo que
 
 ## Next steps
 
-### Queued (top of the next session's list)
+### Queued (next session's list — ordered by priority)
 
-**1. Phantom same-device flow refactor (Option B — queued for future).** We currently use Phantom's *deeplink* protocol on iOS (`phantom.app/ul/v1/connect` + encrypted X25519 responses, client-side decrypt). Works today after the `/subscribe/callback` + `localStorage` fixes, but it's fragile and tightens every iOS release. The proven alternative — verified in the `aiglitch` repo — is Phantom's **browse universal link**: redirect `phantom.app/ul/browse/<our-url>` opens our page *inside Phantom's in-app Chrome webview*, where `window.solana` is live. The same web3.js code used on desktop (`.connect()`, `.signTransaction()`) just works — no deeplink encryption, no sessionStorage/localStorage gymnastics, no callback-parsing page.
+**1. Admin "Mark paid (simulate)" button** on `/admin/orders/[id]`. Lets admin exercise the post-payment provisioning flow (credentials entry, email send, subscription activation) without burning real SOL/BUDJU. Suggested shape: a button that creates a fake `orders` doc and advances it to `status: "pending-credentials"`. Strictly admin-gated; hidden from normal users. Scope: ~40 lines, one route + one button.
 
-The catch: Phantom's in-app browser has its own cookie jar, so the NextAuth Google session from Safari does NOT follow the user into Phantom's browser. aiglitch solves this with an **intent pattern**:
-  - Safari (authenticated) → POST `/api/subscription/create-intent` with plan + wallet + amount → returns opaque `intentId` (Redis/Mongo, 10 min TTL).
-  - Safari redirects user to `phantom.app/ul/browse/comfytv.xyz/pay?i=<intentId>`.
-  - Phantom browser opens the `/pay?i=...` page, no auth needed because `intentId` is the bearer.
-  - `/pay` calls `window.solana.connect()` → backend builds a fresh Solana tx → wallet signs → backend submits → marks user's subscription active on success.
-  - User closes Phantom, Safari tab polls / refreshes and sees the new subscription.
+**2. Foreign-language channel filter** — hide channels with `(DE)`, `(FR)`, `(ES)`, `(IT)`, `(PT)` prefixes (and similar) at query time. User decision: hide from everyone (not per-user) while building. Cleanest location is `lib/channel-catalog.ts` `queryChannels()` — apply a blocklist regex on `name` in the Mongo filter. Keep the list configurable via a `const EXCLUDED_NAME_PATTERNS` export so it's easy to tweak. ~15 lines.
 
-Scope estimate: ~200 LOC, three new backend routes (`create-intent`, `build-and-sign`, `submit`), one new `/pay/[intentId]` page, intent storage (Mongo collection with TTL index is fine — no need for Redis). Also cleanly fixes wallet-switching (every tx calls `.connect()` fresh) and eliminates Bug B (pay-click user-gesture drop on iOS — no more async work between click and redirect).
+**3. Hearts toggle refresh bug on `/dashboard/channels`.** ♥ click fires the POST but category-count badges + hearted-pill strip don't re-render until a full page reload. Suspect the optimistic update in `useFavorites` + the `favByCategory` state aren't reconciling after the server POST. Small, self-contained — good first task after the two above.
 
-Reference implementation: https://github.com/comfybear71/aiglitch — see `src/app/api/auth/sign-tx/route.ts` and `src/app/auth/sign-tx/page.tsx` for the three-action backend + same-device page patterns.
-
-When to do this: bundle with the Stripe checkout work (both touch the payment flow, worth refactoring the subscribe path once). Or sooner if iOS Safari breaks the deeplink protocol again.
-
-**2. Hearts toggle needs page refresh on Browse Channels.** ♥ click fires the mutation but category-count badges + hearted-pill strip don't re-render until reload. Suspect optimistic update in `useFavorites` + `favByCategory` state aren't reconciling after POST. Small, self-contained bug — good first task for a fresh session.
-
-**2. UFC fight-card expand** — two paths, pick one:
+**4. UFC fight-card expand** — two paths, pick one:
   - **Drop it.** TheSportsDB's free tier has empty `strResult` / `strDescriptionEN` for upcoming UFC events and `lookupevent.php` is stubbed (returns Liverpool vs Swansea 2014 for any ID on key `3`). Expand shows nothing useful. Easiest: remove the expandable UI in `src/app/dashboard/sports/page.tsx`.
   - **Wire it to Wikipedia REST API.** Structured fight-card tables on every announced UFC event, e.g. `https://en.wikipedia.org/api/rest_v1/page/html/UFC_Fight_Night:_Burns_vs._Malott`. `strEvent` from TheSportsDB maps cleanly to a Wikipedia title slug — parse the first `<table class="toccolours">` for fights. ~50 lines of server-side parser + lazy fetch on expand.
 
-**3. Tuning for the in-site player (minor).** Already-working playback buffers briefly on first start. Two cheap tweaks:
-  - `src/app/watch/[streamId]/page.tsx` — bump mpegts.js `stashInitialSize` from 128 → 256 or 384 KB for a bigger head-start buffer.
-  - `/etc/comfytv-stream/.env` on the droplet — leave as-is, but consider upgrading the $6 droplet to $12 (2 GB RAM) if concurrent viewers climb past 3-5.
+**5. In-site player polish (minor).** Playback works; first-start can briefly buffer. Cheap tweaks if you want:
+  - `src/app/watch/[streamId]/page.tsx` — buffer config is already tuned (stashInitialSize 384, liveBufferLatencyChasing false). Can go larger on RAM-rich droplets.
+  - Consider upgrading the $6 droplet to $12 (2 GB RAM) if concurrent viewers ever climb past 3–5.
 
-**4. Monitoring for the droplet.** Currently unmonitored. Quick wins:
-  - Point UptimeRobot (or similar) at `https://stream.comfytv.xyz/health` — alerts on downtime.
+**6. Monitoring for the droplet.** Currently unmonitored. Quick wins:
+  - Point UptimeRobot at `https://stream.comfytv.xyz/health` — alerts on downtime.
   - Weekly `journalctl -u comfytv-stream` glance for error patterns.
   - Optional: wire a tiny `/api/admin/stream-proxy-health` endpoint so the `/admin` page shows proxy status.
 
-**5. Other queued:**
-- Fix AFL events source (swap to Squiggle API — code exists in a prior branch, needs a clean PR).
-- Stripe payment option (alternative to SOL/BUDJU for non-crypto users).
-- Phase C sports work: channel ↔ event matching, "remind me", live-now badges.
-- EPG "Now Playing" badges on channel tiles.
+**7. Fix AFL events source** — swap to Squiggle API for fixtures. Code exists in a prior branch, needs a clean PR.
+
+**8. Stripe checkout path.** Alternative to SOL/BUDJU for non-crypto customers. Non-trivial — touches the whole purchase flow. Worth bundling with #9 below if both land.
+
+**9. Phantom same-device flow refactor (Option B — queued for future).** We currently use Phantom's *deeplink* protocol on iOS (`phantom.app/ul/v1/connect` + encrypted X25519 responses, client-side decrypt). Works today after the `/subscribe/callback` + `localStorage` fixes, but it's fragile and tightens every iOS release. The proven alternative — verified in the `aiglitch` repo — is Phantom's **browse universal link**: redirect `phantom.app/ul/browse/<our-url>` opens our page *inside Phantom's in-app Chrome webview*, where `window.solana` is live. The same web3.js code used on desktop (`.connect()`, `.signTransaction()`) just works — no deeplink encryption, no localStorage gymnastics, no callback-parsing page.
+
+  The catch: Phantom's in-app browser has its own cookie jar, so the NextAuth Google session from Safari does NOT follow the user into Phantom's browser. aiglitch solves this with an **intent pattern**:
+  - Safari (authenticated) → POST `/api/subscription/create-intent` with plan + wallet + amount → returns opaque `intentId` (Mongo TTL index, 10 min TTL).
+  - Safari redirects user to `phantom.app/ul/browse/comfytv.xyz/pay?i=<intentId>`.
+  - Phantom browser opens `/pay?i=...` — no auth needed because `intentId` is the bearer.
+  - `/pay` calls `window.solana.connect()` → backend builds a fresh Solana tx → wallet signs → backend submits → marks subscription active.
+  - User closes Phantom, Safari tab polls / refreshes and sees the new subscription.
+
+  Scope: ~200 LOC, three backend routes (`create-intent`, `build-and-sign`, `submit`), one `/pay/[intentId]` page, intent storage. Also cleanly fixes wallet-switching (every tx calls `.connect()` fresh) and eliminates Bug B (pay-click user-gesture drop). Reference: https://github.com/comfybear71/aiglitch — `src/app/api/auth/sign-tx/route.ts` + `src/app/auth/sign-tx/page.tsx`.
+
+  When to do this: bundle with Stripe (#8) — both touch the payment flow, worth refactoring once. Or sooner if Apple/Phantom break the deeplink protocol again.
+
+**10. Sports Phase C.** Channel ↔ event matching, "remind me" alerts, live-now badges. Deferred until after higher-value items.
+
+**11. EPG "Now Playing" badges on channel tiles.** Needs an EPG source (probably MyBunny's EPG URL — `http://epg.mybunny.tv/btv/USER/PASS/PASS`). Not started.
 
 ### Recently completed
 - v1.3.x: Category sidebar on Browse Channels; removed redundant Movies/TV Series tiles.
@@ -122,6 +128,10 @@ When to do this: bundle with the Stripe checkout work (both touch the payment fl
 - v1.6.x: Sports tile "Next: …" previews (AFL + UFC), tighter AFL filter, always-on desktop categories sidebar.
 - v1.7.x: In-site HLS player scaffolding + test mode (`/watch/[id]?test=1`) + Vercel serverless proxy (kept only as reference; not used on the shipping path).
 - **v1.8.0 (the big one): In-site MPEG-TS live TV via droplet proxy.** DigitalOcean droplet (`stream.comfytv.xyz`) running Caddy + a tiny Node HMAC-verifier, `mpegts.js` in the browser, 60-second signed URLs, graceful VLC / personal-M3U fallbacks. Shipped 2026-04-17.
+- v1.8.1: Docs sweep — CLAUDE.md in-site-playback architecture section, HANDOFF.md reflecting the droplet as shipping infra.
+- v1.8.2: `/subscribe/callback` dedicated path — dodges iOS Safari's tab-consolidation stripping Phantom callback params.
+- v1.8.3: Phantom session state moved to `localStorage` so `/subscribe/callback` (fresh Safari tab) can decrypt the keypair created on `/subscribe`.
+- v1.8.4: Dashboard "Change Wallet" button routes through `/subscribe/callback?return=<current-path>` instead of `/dashboard/order` — previously the redirect dumped users on a BUDJU-gated page with the callback response silently ignored.
 
 ## Session Log
 
@@ -181,16 +191,40 @@ After yesterday's three failed in-site playback attempts and the diagnostic brea
 
 PR #55 closes this out. The droplet is the shipping infrastructure. Infrastructure to consider later: horizontal scale (load-balanced pair of droplets), monitoring (UptimeRobot on `/health`), per-user bandwidth logging.
 
+### 2026-04-18 — iOS Phantom payment flow fixes 💎
+
+User reported payments + wallet-linking broken on iPhone Safari; worked fine on PC. Ruled out code regression (no payment-touching commits for weeks — env vars, Helius, and `buildPerUserStreamUrl` all unchanged). Diagnosis was environmental — Apple/Phantom tightening iOS Safari behaviour.
+
+Three stacked iOS-specific bugs, each fixed in its own focused PR:
+
+- **PR #58 — `/subscribe/callback` dedicated path (v1.8.2).** Root cause: iOS Safari's tab-consolidation. When Phantom redirected back to `https://comfytv.xyz/subscribe?data=...&nonce=...`, Safari saw a matching existing tab and brought *that* forward — with the original URL, stripping Phantom's encrypted callback payload entirely. Fix: point `redirect_link` at `/subscribe/callback` (a path with no open tab), forcing Safari to navigate fresh with all params intact. The new thin page parses the callback, stores session / verifies tx, then `router.replace`s back to `/subscribe`.
+- **PR #59 — localStorage for Phantom session (v1.8.3).** After #58 shipped, users hit "Failed to decrypt Phantom response". Root cause: the new `/subscribe/callback` *was* being treated as a fresh Safari tab — so it had its own empty `sessionStorage`. The dapp keypair created on the original `/subscribe` tab wasn't available to the callback tab. Fix: move all four Phantom storage keys (`keypair`, `session`, `phantom_public_key`, `wallet`) plus `pending_plan_state` from `sessionStorage` → `localStorage` (origin-scoped, shared across tabs). Ephemeral throwaway values, not user credentials — safe to persist slightly longer.
+- **PR #60 — `Change Wallet` button flow (v1.8.4).** After #58+#59, the **subscribe** flow worked on iPhone but the **dashboard Change Wallet button** still didn't update the linked wallet. Root cause: `DashboardWalletStrip` built its Phantom deeplink with `redirect_link=/dashboard/order` — a page with no callback-parsing code. Phantom's response was silently discarded, `/api/me/wallet/phantom-mobile` never called, and the page's BUDJU purchase gate blocked users whose new wallet had <1M BUDJU. Fix: route Change Wallet at `/subscribe/callback?return=<current-dashboard-path>`. The callback page learned a same-origin `?return=` param that controls where it redirects after a successful connect. Users now land back on the dashboard page they came from, with the new wallet persisted.
+
+User verified on iPhone Safari: pick plan → Connect Phantom → approve → wallet connected + visible on dashboard + balances correct. Change-wallet flow also working with sub-1M-BUDJU wallets.
+
+**What worked**
+- Ship-bug-isolate-fix cycle: each PR addressed one symptom, got merged + tested before the next was built. No giant omnibus patch.
+- Testing on desktop first (which works) vs iPhone (which was broken) gave us the "this is iOS-specific" split within minutes.
+- User pasting actual URL bar content + screenshot of the /subscribe/callback landing state cracked the "sessionStorage per-tab" hypothesis.
+- External reference (the aiglitch project's `phantom.app/ul/browse/` pattern) was surfaced by the user mid-session and documented as **Option B** for future work — gave us a clear "proper long-term answer" to point at even though we shipped the smaller fix today.
+
+**What didn't work (and why we skipped)**
+- Aiglitch's `phantom.app/ul/browse/` pattern is the industry-standard path but requires a full intent-pattern refactor (~200 LOC, new API routes, new `/pay` page, wallet-link rework). Decided against as a "third payment attempt in one session" — too much scope. Parked as Queued #9 when Stripe work justifies reopening the payment path.
+
 ### Outstanding
+- Admin "Mark paid (simulate)" test button.
+- Foreign-language channel filter `(DE)`/`(FR)`/`(ES)` etc.
 - Hearts-toggle refresh bug on Browse Channels.
 - UFC fight-card expand — drop or replace with Wikipedia REST API.
 - Squiggle AFL fix.
 - Stripe checkout path.
 - EPG "Now Playing" badges.
 - In-site player polish (buffer tuning, droplet monitoring).
-- Phantom same-device flow refactor (Option B — aiglitch pattern, see Queued #1).
+- Phantom same-device flow refactor (Option B — aiglitch pattern).
 
 ### Known testing constraints (not bugs — just things to know)
 
 - **Google auto-sign-in on iPhone.** Once a user has signed into Google in iOS Safari, NextAuth + Google OAuth will silently reuse the same account on subsequent visits — even after "Sign Out" on ComfyTV. To test another user's account on the same phone: either sign out of Google itself in Safari (`google.com` → profile → Sign out), use Safari Private Browsing, or use a different browser app. This is a Google-side behaviour, not a ComfyTV bug.
-- **Admin test button coming.** `/admin/orders/[id]` will get a "Mark paid (simulate)" button so the admin can exercise the post-payment provisioning flow without spending real SOL/BUDJU. Next PR after the iOS payment fixes settle.
+- **Admin "Mark paid" button.** Still unbuilt at end of this session — will land as the first PR of the next one.
+- **Bug B (iOS pay-click user-gesture drop) not yet reproduced in real testing.** If a user reports "tap Pay on iPhone and nothing happens", that's Bug B and the fix is eager-blockhash (pre-fetch on plan select so the click handler is synchronous). Don't burn attempts on it before confirming the symptom.

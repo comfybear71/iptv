@@ -60,7 +60,9 @@ src/
 │   ├── page.tsx                     # Landing page
 │   ├── globals.css                  # Tailwind + globals
 │   ├── pricing/page.tsx             # Public plan comparison
-│   ├── subscribe/page.tsx           # Payment flow
+│   ├── subscribe/
+│   │   ├── page.tsx                 # Payment flow (plan picker + wallet connect + pay)
+│   │   └── callback/page.tsx        # Phantom deeplink return — parses connect/sign callback, then router.replace back to /subscribe or ?return=<path>
 │   ├── dashboard/
 │   │   ├── layout.tsx               # Sidebar shell + wallet strip
 │   │   ├── plans/page.tsx           # "My Plans" (default landing)
@@ -258,6 +260,30 @@ Things to remember:
 - **Don't go back to a Vercel-side proxy.** It was tried on branch `claude/setup-iptv-project-Tqyec` (also merged in an earlier state) and always hit the 60-second Vercel function cap. The droplet is the right place for streaming bytes.
 - **Don't swap `mpegts.js` for `hls.js` on `/watch`.** The provider streams progressive TS, not HLS — `hls.js` will keep trying to parse the body as a playlist, fail, and hang the `<video>` element. Keep `hls.js` around only for the `?test=1` diagnostic.
 - **Monitoring**: `journalctl -u comfytv-stream -f` on the droplet tails request logs. `curl https://stream.comfytv.xyz/health` returns `ok`.
+
+## iOS Phantom payment flow (the callback page + localStorage)
+
+Desktop uses Phantom's browser extension — `window.solana` is injected, standard web3.js. iPhone Safari has no extension, so we use Phantom's **deeplink protocol** (`phantom.app/ul/v1/connect` + `signAndSendTransaction`) with X25519-encrypted payloads. Three iOS-specific gotchas are solved in the current code; changing any of them will re-break iPhone payments.
+
+1. **Safari tab-consolidation strips callback params.** When Phantom redirects to `/subscribe?data=...` and a `/subscribe` tab is already open, Safari resurfaces the old tab with the old URL — payload gone. **Solution**: Phantom's `redirect_link` points at the dedicated `/subscribe/callback` path (no open tab to consolidate with), which parses then `router.replace`s.
+2. **sessionStorage is per-tab, so fresh Safari tabs break decryption.** The `/subscribe/callback` navigation creates a new Safari tab with empty sessionStorage — the dapp keypair minted on `/subscribe` is invisible to it. **Solution**: all Phantom state (`keypair`, `session`, `phantom_public_key`, `wallet`, `pending_plan_state`) lives in `localStorage` — origin-scoped, shared across tabs.
+3. **"Change Wallet" from the dashboard strip must not dump users on `/dashboard/order`.** That page has no callback-parsing code AND has a BUDJU purchase gate that blocks sub-1M-BUDJU wallets. **Solution**: `DashboardWalletStrip` redirects to `/subscribe/callback?return=<current-dashboard-path>`. The callback page accepts a same-origin `?return=` param and sends the user back where they came from after a successful connect.
+
+Key files:
+
+- **`src/lib/phantom-deeplink.ts`** — deeplink URL builders + response parsers + localStorage-backed session helpers. Comment at the top explains *why* localStorage, not sessionStorage.
+- **`src/app/subscribe/callback/page.tsx`** — the dedicated return page. Reads params from both `?query` and `#hash` (some Phantom versions use the fragment). Handles connect and sign callbacks, does a same-origin `?return=<path>` check before redirecting.
+- **`src/app/subscribe/page.tsx`** — builds the `connect` and `signAndSendTransaction` deeplinks with `redirect_link = origin + "/subscribe/callback"` (no query params on this one — the pending-plan state is restored from `localStorage` when the user lands back on `/subscribe`).
+- **`src/components/DashboardWalletStrip.tsx`** — Change Wallet button on mobile. Builds `redirect_link = origin + "/subscribe/callback?return=" + encodeURIComponent(window.location.pathname)`.
+- **`src/app/api/me/wallet/phantom-mobile/route.ts`** — server endpoint the callback POSTs to. Trusts the wallet address that came out of a successful Phantom decrypt (the session cookie is the auth; decryption is the proof-of-possession). No BUDJU gate.
+
+Things to remember:
+
+- **Don't change `redirect_link` back to `/subscribe`.** Safari will eat the params. Unit-tested on iPhone 17+ / Safari 18.
+- **Don't move Phantom session storage back to sessionStorage.** The callback page is a fresh tab.
+- **Don't add a new page that initiates Phantom connect without pointing at `/subscribe/callback`.** Pass a `?return=<same-origin-path>` if you want the user to land back on a specific page.
+- **Bug B (theoretical, not yet confirmed)**: iOS Safari may silently drop a `window.location.href = phantomDeeplink` assignment if there's async work (e.g. `fetch` for blockhash) between the user's click and the assignment. Fix when confirmed: pre-fetch blockhash eagerly when the user hits Step 4 so the Pay click handler is fully synchronous.
+- **Future refactor (Option B)**: Replace the deeplink protocol with `phantom.app/ul/browse/<our-url>` + intent pattern (a la the aiglitch repo). Removes the encryption dance entirely because it opens our page *inside Phantom's in-app browser* where `window.solana` is live. Queued in HANDOFF.md — bundle with Stripe work.
 
 ## Commands
 ```bash
