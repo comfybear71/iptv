@@ -186,6 +186,10 @@ export async function getCategories(): Promise<
   const rows = await db
     .collection(CHANNELS_COLLECTION)
     .aggregate([
+      // Hide foreign-language channels (see EXCLUDED_NAME_PATTERNS below).
+      // Categories whose only channels are filtered out will simply not
+      // appear in the grouping, which is what we want.
+      { $match: EXCLUDED_NAME_FILTER },
       { $group: { _id: "$group", count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ])
@@ -201,6 +205,34 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * Foreign-language channel prefixes we hide from discovery (Browse Channels
+ * grid + category sidebar). The filter is applied at query time so we don't
+ * have to touch the master-catalog refresh; channels stay in Mongo but
+ * aren't served.
+ *
+ * Users who already hearted a foreign channel before the filter was added
+ * keep it in their personal M3U (the playlist route queries by streamId,
+ * not through this filter). They just won't rediscover it in the UI.
+ *
+ * To turn one back on temporarily for testing, remove it from this list.
+ */
+export const EXCLUDED_NAME_PATTERNS: readonly string[] = [
+  "DE", "FR", "ES", "IT", "PT", "NL", "DK", "SE", "NO", "FI",
+  "TR", "AR", "PL", "RO", "GR", "CZ", "HU", "RU", "IR", "ID", "MY",
+];
+
+/**
+ * Mongo filter fragment that excludes any channel whose name contains one
+ * of the parenthesised EXCLUDED_NAME_PATTERNS (e.g. "(DE) RTL HD"). Spread
+ * this into any find/aggregate filter where we want to hide those channels.
+ */
+export const EXCLUDED_NAME_FILTER: Record<string, unknown> = {
+  name: {
+    $not: new RegExp(`\\((${EXCLUDED_NAME_PATTERNS.join("|")})\\)`, "i"),
+  },
+};
+
 export async function queryChannels(opts: {
   category?: string | null;
   search?: string;
@@ -209,7 +241,7 @@ export async function queryChannels(opts: {
 }): Promise<{ total: number; rows: CatalogChannel[] }> {
   const db = await getDb();
   const coll = db.collection<CatalogChannel>(CHANNELS_COLLECTION);
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { ...EXCLUDED_NAME_FILTER };
   if (opts.category) filter.group = opts.category;
   if (opts.search && opts.search.trim()) {
     // Search across every reasonable text field — display name, tvg-name,
@@ -238,7 +270,7 @@ export async function getAllChannels(): Promise<CatalogChannel[]> {
   const db = await getDb();
   return db
     .collection<CatalogChannel>(CHANNELS_COLLECTION)
-    .find({})
+    .find(EXCLUDED_NAME_FILTER)
     .sort({ group: 1, name: 1 })
     .toArray();
 }
