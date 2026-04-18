@@ -56,11 +56,23 @@ function CallbackInner() {
         ? fromHash
         : fromQuery;
 
+    // ?return=<path> — the page that initiated the Phantom flow can ask us
+    // to redirect back there on success (e.g. /dashboard/wallet when the
+    // user clicked "Change Wallet" from the dashboard strip). Only accept
+    // same-origin paths starting with "/" so we can't be used as an open
+    // redirect.
+    const rawReturn =
+      fromQuery.get("return") || fromHash.get("return") || "";
+    const returnPath =
+      rawReturn && rawReturn.startsWith("/") && !rawReturn.startsWith("//")
+        ? rawReturn
+        : "/subscribe";
+
     const callbackType = detectPhantomCallback(params);
 
     if (!callbackType) {
       // No callback — user probably navigated here directly. Bounce home.
-      router.replace("/subscribe");
+      router.replace(returnPath);
       return;
     }
 
@@ -72,7 +84,7 @@ function CallbackInner() {
           if (!result) throw new Error("No Phantom payload");
 
           // Persist the linked wallet on the user's account server-side.
-          // Non-fatal if it fails — the sessionStorage link still works
+          // Non-fatal if it fails — the local session link still works
           // for this browser session, and the dashboard will reconcile
           // on next visit.
           await fetch("/api/me/wallet/phantom-mobile", {
@@ -82,7 +94,7 @@ function CallbackInner() {
           }).catch(() => null);
 
           setStatus({ kind: "ok", message: "Wallet connected" });
-          router.replace("/subscribe");
+          router.replace(returnPath);
         } catch (err: unknown) {
           setStatus({
             kind: "error",
@@ -93,7 +105,8 @@ function CallbackInner() {
         return;
       }
 
-      // callbackType === "sign"
+      // callbackType === "sign" — always goes through /subscribe because
+      // signing only happens during the subscribe payment flow.
       try {
         setStatus({
           kind: "working",
