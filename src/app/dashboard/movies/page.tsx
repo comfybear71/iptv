@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   buildFilteredMoviesUrl,
   buildWebPlayerUrl,
@@ -18,12 +19,47 @@ interface Subscription {
   credentials?: SubscriptionCredentials;
 }
 
+interface LatestMovie {
+  streamId: number;
+  name: string;
+  year: number | null;
+  poster: string;
+  rating: number;
+  added: number;
+}
+
+interface GridMovie {
+  streamId: number;
+  name: string;
+  year: number | null;
+  poster: string | null;
+  rating: number;
+}
+
+interface MoviesGridResponse {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  movies: GridMovie[];
+}
+
 export default function VodMoviesPage() {
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState<string>("All");
   const [genre, setGenre] = useState<string>("All");
   const [size, setSize] = useState<CollectionSize>(2);
+
+  // Latest row (posters-only, ordered by `added` desc).
+  const [latest, setLatest] = useState<LatestMovie[]>([]);
+  const [latestLoading, setLatestLoading] = useState(true);
+
+  // Filterable grid below.
+  const [gridPage, setGridPage] = useState(1);
+  const [grid, setGrid] = useState<MoviesGridResponse | null>(null);
+  const [gridLoading, setGridLoading] = useState(false);
+  const [gridError, setGridError] = useState("");
 
   useEffect(() => {
     fetch("/api/subscriptions")
@@ -34,10 +70,60 @@ export default function VodMoviesPage() {
       });
   }, []);
 
+  // Load latest once.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/vod/movies/latest?limit=12", {
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && Array.isArray(data.movies)) setLatest(data.movies);
+      } finally {
+        setLatestLoading(false);
+      }
+    })();
+  }, []);
+
+  // Reload grid when filters change. Page resets to 1 on filter change.
+  const loadGrid = useCallback(
+    async (opts: { page: number; year: string; genre: string }) => {
+      setGridLoading(true);
+      setGridError("");
+      try {
+        const params = new URLSearchParams();
+        params.set("page", String(opts.page));
+        if (opts.year && opts.year !== "All") params.set("year", opts.year);
+        if (opts.genre && opts.genre !== "All") params.set("genre", opts.genre);
+        const res = await fetch(`/api/vod/movies?${params.toString()}`, {
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        setGrid(data as MoviesGridResponse);
+      } catch (err: unknown) {
+        setGridError(err instanceof Error ? err.message : "Failed to load");
+        setGrid(null);
+      } finally {
+        setGridLoading(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    loadGrid({ page: gridPage, year, genre });
+  }, [gridPage, year, genre, loadGrid]);
+
+  // Reset page when filters change so we're not stuck on page 5 of 2.
+  useEffect(() => {
+    setGridPage(1);
+  }, [year, genre]);
+
   const active = subs.find((s) => s.status === "active");
   const creds = active?.credentials;
   const host = creds?.xtremeHost || DEFAULT_XTREME_HOST;
-  const url = buildFilteredMoviesUrl({
+  const m3uUrl = buildFilteredMoviesUrl({
     host,
     username: creds?.xtremeUsername,
     password: creds?.xtremePassword,
@@ -45,7 +131,7 @@ export default function VodMoviesPage() {
     year,
     genre,
   });
-  const webUrl = buildWebPlayerUrl(url);
+  const webUrl = buildWebPlayerUrl(m3uUrl);
 
   if (loading) {
     return (
@@ -68,14 +154,42 @@ export default function VodMoviesPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">VOD Movies</h1>
           <p className="text-sm text-slate-400">
-            Filter by year and genre, then watch in browser or copy the M3U URL
-            to your IPTV app.
+            Browse the latest, filter by year or genre, click to play inline —
+            or copy the M3U URL for your TV app.
           </p>
         </div>
       </div>
 
-      {/* URL bar (live-updates with filter changes) */}
+      {/* Latest row */}
+      <section className="mt-6">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+          🎬 Latest Added
+        </h2>
+        {latestLoading ? (
+          <div className="mt-3 text-xs text-slate-500">Loading latest…</div>
+        ) : latest.length === 0 ? (
+          <div className="mt-3 text-xs text-slate-500">No latest yet.</div>
+        ) : (
+          <div className="mt-3 flex gap-3 overflow-x-auto pb-2">
+            {latest.map((m) => (
+              <PosterCard
+                key={m.streamId}
+                href={`/watch/movie/${m.streamId}`}
+                title={m.name}
+                year={m.year}
+                rating={m.rating}
+                poster={m.poster}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* M3U URL bar (live-updates with filter changes) — for TiviMate users */}
       <div className="mt-6 overflow-hidden rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <p className="mb-2 text-xs text-slate-400">
+          Using TiviMate / IPTV Smarters / VLC? Copy this filtered M3U URL.
+        </p>
         <div className="flex flex-wrap items-center gap-2">
           <a
             href={webUrl}
@@ -83,25 +197,13 @@ export default function VodMoviesPage() {
             rel="noopener noreferrer"
             className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500"
           >
-            ▶ Watch
+            ▶ Watch (webplayer)
           </a>
-          <CopyButton value={url} />
+          <CopyButton value={m3uUrl} />
         </div>
         <code className="mt-2 block w-full break-all font-mono text-[11px] text-slate-400">
-          {url}
+          {m3uUrl}
         </code>
-      </div>
-
-      {/* Stats strip */}
-      <div className="mt-4 grid gap-3 sm:grid-cols-4">
-        <Stat label="Total Movies" value="14,160" icon="🎬" />
-        <Stat label="With Metadata" value="12,946" icon="🏷️" />
-        <Stat label="Avg Rating" value="6.3" icon="⭐" />
-        <Stat
-          label="Selected Size"
-          value={COLLECTION_SIZES.find((s) => s.value === size)?.label || ""}
-          icon="📦"
-        />
       </div>
 
       {/* Year filter */}
@@ -138,10 +240,79 @@ export default function VodMoviesPage() {
         </div>
       </div>
 
-      {/* Collection size */}
+      {/* Grid results */}
+      <section className="mt-6">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+            🔍 Results
+          </h3>
+          <div className="text-xs text-slate-500">
+            {gridLoading
+              ? "Loading…"
+              : grid
+                ? `${grid.total.toLocaleString()} movies · page ${grid.page} / ${grid.totalPages}`
+                : ""}
+          </div>
+        </div>
+
+        {gridError && (
+          <div className="mt-3 rounded-lg border border-red-800 bg-red-900/30 p-3 text-xs text-red-300">
+            {gridError}
+          </div>
+        )}
+
+        {grid && grid.movies.length === 0 && !gridLoading && (
+          <div className="mt-6 text-center text-sm text-slate-500">
+            No movies match these filters.
+          </div>
+        )}
+
+        {grid && grid.movies.length > 0 && (
+          <>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+              {grid.movies.map((m) => (
+                <PosterCard
+                  key={m.streamId}
+                  href={`/watch/movie/${m.streamId}`}
+                  title={m.name}
+                  year={m.year}
+                  rating={m.rating}
+                  poster={m.poster}
+                />
+              ))}
+            </div>
+
+            {grid.totalPages > 1 && (
+              <div className="mt-5 flex items-center justify-between text-xs">
+                <button
+                  disabled={grid.page <= 1 || gridLoading}
+                  onClick={() => setGridPage((p) => Math.max(1, p - 1))}
+                  className="rounded-lg border border-slate-700 px-3 py-1.5 text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+                >
+                  ← Prev
+                </button>
+                <span className="text-slate-500">
+                  Page {grid.page} of {grid.totalPages}
+                </span>
+                <button
+                  disabled={grid.page >= grid.totalPages || gridLoading}
+                  onClick={() =>
+                    setGridPage((p) => Math.min(grid.totalPages, p + 1))
+                  }
+                  className="rounded-lg border border-slate-700 px-3 py-1.5 text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {/* Collection size — affects M3U URL only */}
       <div className="mt-6">
         <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-          📦 Collection Size
+          📦 M3U Collection Size (for TiviMate export only)
         </h3>
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {COLLECTION_SIZES.map((s) => (
@@ -162,12 +333,58 @@ export default function VodMoviesPage() {
           ))}
         </div>
       </div>
-
-      <p className="mt-6 text-center text-xs text-slate-500">
-        Movie metadata (titles, posters, ratings) is browseable in your IPTV
-        app once you connect with the M3U URL above.
-      </p>
     </div>
+  );
+}
+
+function PosterCard({
+  href,
+  title,
+  year,
+  rating,
+  poster,
+}: {
+  href: string;
+  title: string;
+  year: number | null;
+  rating: number;
+  poster: string | null;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group flex w-40 flex-shrink-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900 transition hover:border-slate-600 sm:w-auto"
+    >
+      <div className="relative aspect-[2/3] overflow-hidden bg-slate-950">
+        {poster ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={poster}
+            alt={title}
+            className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+            loading="lazy"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = "none";
+            }}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-3xl text-slate-700">
+            🎬
+          </div>
+        )}
+        {rating > 0 && (
+          <span className="absolute right-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-amber-300 backdrop-blur-sm">
+            ⭐ {rating.toFixed(1)}
+          </span>
+        )}
+      </div>
+      <div className="p-2">
+        <div className="truncate text-xs font-semibold text-white" title={title}>
+          {title}
+        </div>
+        {year && <div className="text-[10px] text-slate-500">{year}</div>}
+      </div>
+    </Link>
   );
 }
 
@@ -191,24 +408,6 @@ function FilterChip({
     >
       {label}
     </button>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: string;
-  icon: string;
-}) {
-  return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
-      <div className="flex items-center gap-2 text-2xl">{icon}</div>
-      <div className="mt-1 text-lg font-bold text-white">{value}</div>
-      <div className="text-[11px] text-slate-500">{label}</div>
-    </div>
   );
 }
 
