@@ -220,6 +220,7 @@ function escapeRegex(s: string): string {
 export const EXCLUDED_NAME_PATTERNS: readonly string[] = [
   "DE", "FR", "ES", "IT", "PT", "NL", "DK", "SE", "NO", "FI",
   "TR", "AR", "PL", "RO", "GR", "CZ", "HU", "RU", "IR", "ID", "MY",
+  "Latin",
 ];
 
 /**
